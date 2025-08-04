@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram DM Navigator</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="title">Instagram DM Navigator</h1>
+            <p class="subtitle">Navigate your Instagram DMs with date-based filtering</p>
+        </header>
+
+        <main class="main-content">
+            <!-- Status Section -->
+            <section class="status-section">
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot" id="statusDot"></span>
+                    <span class="status-text" id="statusText">Checking status...</span>
+                </div>
+            </section>
+
+            <!-- Date Filter Section -->
+            <section class="filter-section">
+                <h2 class="section-title">Date Filter</h2>
+                
+                <div class="filter-controls">
+                    <div class="filter-type-selector">
+                        <label for="filterType" class="label">Filter Type:</label>
+                        <select id="filterType" class="select">
+                            <option value="exact_date">Exact Date</option>
+                            <option value="date_range">Date Range</option>
+                            <option value="days_ago">Days Ago</option>
+                            <option value="weeks_ago">Weeks Ago</option>
+                            <option value="months_ago">Months Ago</option>
+                        </select>
+                    </div>
+
+                    <div class="date-input-group">
+                        <label for="dateInput" class="label">Date:</label>
+                        <input type="date" id="dateInput" class="date-input" />
+                    </div>
+
+                    <div class="quick-date-buttons">
+                        <button class="quick-date-btn" data-days="1">Yesterday</button>
+                        <button class="quick-date-btn" data-days="7">1 Week Ago</button>
+                        <button class="quick-date-btn" data-days="30">1 Month Ago</button>
+                        <button class="quick-date-btn" data-days="90">3 Months Ago</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Navigation Controls -->
+            <section class="navigation-section">
+                <h2 class="section-title">Navigation</h2>
+                
+                <div class="navigation-controls">
+                    <button id="activateBtn" class="btn btn-primary">
+                        <span class="btn-icon">🚀</span>
+                        Activate Navigation
+                    </button>
+                    
+                    <button id="stopBtn" class="btn btn-secondary" disabled>
+                        <span class="btn-icon">⏹️</span>
+                        Stop Navigation
+                    </button>
+                </div>
+
+                <div class="navigation-options">
+                    <div class="option-group">
+                        <label for="scrollDirection" class="label">Scroll Direction:</label>
+                        <select id="scrollDirection" class="select">
+                            <option value="up">Up (Older Messages)</option>
+                            <option value="down">Down (Newer Messages)</option>
+                        </select>
+                    </div>
+
+                    <div class="option-group">
+                        <label for="maxScrolls" class="label">Max Scrolls:</label>
+                        <input type="number" id="maxScrolls" class="number-input" value="50" min="10" max="200" />
+                    </div>
+                </div>
+            </section>
+
+            <!-- Progress Section -->
+            <section class="progress-section" id="progressSection" style="display: none;">
+                <h2 class="section-title">Progress</h2>
+                
+                <div class="progress-info">
+                    <div class="progress-item">
+                        <span class="progress-label">Scrolls:</span>
+                        <span class="progress-value" id="scrollCount">0</span>
+                    </div>
+                    
+                    <div class="progress-item">
+                        <span class="progress-label">Messages Found:</span>
+                        <span class="progress-value" id="messageCount">0</span>
+                    </div>
+                    
+                    <div class="progress-item">
+                        <span class="progress-label">Status:</span>
+                        <span class="progress-value" id="progressStatus">Ready</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-links">
+                <button id="helpBtn" class="link-btn">Help</button>
+                <button id="settingsBtn" class="link-btn">Settings</button>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Help Modal -->
+    <div id="helpModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Help & Instructions</h3>
+                <button class="modal-close" id="closeHelpModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h4>How to use:</h4>
+                <ol>
+                    <li>Navigate to Instagram DMs in your browser</li>
+                    <li>Select a date filter type and date</li>
+                    <li>Click "Activate Navigation" to start</li>
+                    <li>The extension will scroll through your DMs</li>
+                    <li>Messages matching your date filter will be highlighted</li>
+                </ol>
+                
+                <h4>Filter Types:</h4>
+                <ul>
+                    <li><strong>Exact Date:</strong> Find messages from a specific date</li>
+                    <li><strong>Date Range:</strong> Find messages within 24 hours of a date</li>
+                    <li><strong>Days/Weeks/Months Ago:</strong> Find messages from relative time periods</li>
+                </ul>
+                
+                <h4>Tips:</h4>
+                <ul>
+                    <li>Use the quick date buttons for common time periods</li>
+                    <li>Adjust scroll direction based on your needs</li>
+                    <li>Monitor progress in the progress section</li>
+                    <li>Stop navigation anytime with the stop button</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

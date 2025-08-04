@@ -1,0 +1,47 @@
+{
+  "name": "instagram-dm-navigator",
+  "version": "1.0.0",
+  "description": "A Chrome extension for navigating Instagram DMs with date-based filtering and human-like scrolling patterns",
+  "main": "manifest.json",
+  "scripts": {
+    "build": "echo 'No build process required for Chrome extension'",
+    "test": "echo 'Run tests manually in Chrome'",
+    "lint": "echo 'Linting can be done with ESLint if needed'",
+    "dev": "echo 'Load extension in Chrome for development'"
+  },
+  "keywords": [
+    "chrome-extension",
+    "instagram",
+    "dm",
+    "direct-messages",
+    "date-filtering",
+    "scrolling",
+    "automation"
+  ],
+  "author": "Instagram DM Navigator Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/instagram-dm-navigator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/your-username/instagram-dm-navigator/issues"
+  },
+  "homepage": "https://github.com/your-username/instagram-dm-navigator#readme",
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "devDependencies": {},
+  "dependencies": {},
+  "manifest": {
+    "version": 3,
+    "permissions": [
+      "activeTab",
+      "storage",
+      "contextMenus"
+    ],
+    "host_permissions": [
+      "*://www.instagram.com/*"
+    ]
+  }
+}
