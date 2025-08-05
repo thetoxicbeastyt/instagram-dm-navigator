@@ -29,12 +29,232 @@ let scrollAttempts = 0;
 let targetDate = null;
 
 /**
+ * Advanced Instagram Stealth Class
+ * Provides comprehensive anti-detection measures
+ */
+class AdvancedInstagramStealth {
+  static stealthMultiplier = 1.0;
+  static maxScrollAmount = 800;
+  static humanBehaviorProbability = 0.3;
+
+  static async initializeUltraStealthMode() {
+    console.log('🥷 Initializing Ultra Stealth Mode...');
+    
+    // 1. Remove ALL automation signals
+    await this.removeAutomationSignals();
+    
+    // 2. Natural user simulation
+    await this.simulateNaturalUserBehavior();
+    
+    // 3. Request pattern masking
+    await this.maskRequestPatterns();
+    
+    // 4. Monitor Instagram blocking
+    await this.monitorInstagramBlocking();
+    
+    console.log('✅ Ultra Stealth Mode initialized');
+  }
+
+  static async removeAutomationSignals() {
+    // Remove webdriver properties more aggressively
+    const automationProps = [
+      'webdriver', '__webdriver_unwrapped', 'automation',
+      '__webdriver_script_fn', '__webdriver_script_func', '__webdriver_script_function'
+    ];
+    
+    automationProps.forEach(prop => {
+      try {
+        delete window.navigator[prop];
+        delete window[prop];
+        Object.defineProperty(navigator, prop, {
+          get: () => undefined,
+          configurable: true
+        });
+      } catch (e) {
+        // Ignore errors
+      }
+    });
+
+    // Override chrome runtime if present
+    if (window.chrome && window.chrome.runtime && window.chrome.runtime.onConnect) {
+      delete window.chrome.runtime.onConnect;
+    }
+
+    // Remove console automation traces
+    const originalConsole = { ...console };
+    ['log', 'warn', 'error'].forEach(method => {
+      console[method] = (...args) => {
+        const message = args[0]?.toString() || '';
+        if (!message.includes('🔍') && !message.includes('📊') && !message.includes('🥷')) {
+          originalConsole[method].apply(console, args);
+        }
+      };
+    });
+  }
+
+  static async simulateNaturalUserBehavior() {
+    // 1. Random mouse movements
+    setInterval(() => {
+      if (Math.random() < this.humanBehaviorProbability) {
+        const x = Math.random() * window.innerWidth;
+        const y = Math.random() * window.innerHeight;
+        
+        const event = new MouseEvent('mousemove', {
+          clientX: x,
+          clientY: y,
+          bubbles: true
+        });
+        document.dispatchEvent(event);
+      }
+    }, 3000 + Math.random() * 7000);
+
+    // 2. Occasional clicks outside message area
+    setInterval(() => {
+      if (Math.random() < 0.1) {
+        const safeAreas = ['header', 'nav', 'aside'];
+        const area = document.querySelector(safeAreas[Math.floor(Math.random() * safeAreas.length)]);
+        if (area) {
+          const rect = area.getBoundingClientRect();
+          const event = new MouseEvent('click', {
+            clientX: rect.left + rect.width * 0.5,
+            clientY: rect.top + rect.height * 0.5,
+            bubbles: true
+          });
+          area.dispatchEvent(event);
+        }
+      }
+    }, 30000 + Math.random() * 30000);
+
+    // 3. Natural viewport scrolling
+    setInterval(() => {
+      if (Math.random() < 0.2) {
+        const scrollAmount = Math.random() * 200 - 100;
+        window.scrollBy({
+          top: scrollAmount,
+          behavior: 'smooth'
+        });
+        
+        // Return to original position
+        setTimeout(() => {
+          window.scrollBy({
+            top: -scrollAmount,
+            behavior: 'smooth'
+          });
+        }, 1000 + Math.random() * 2000);
+      }
+    }, 20000 + Math.random() * 20000);
+  }
+
+  static async maskRequestPatterns() {
+    // Intercept and delay requests to look more human
+    const originalFetch = window.fetch;
+    const originalXHR = window.XMLHttpRequest;
+    
+    // Fetch interception
+    window.fetch = async (...args) => {
+      // Add natural delay based on request type
+      const url = args[0]?.toString() || '';
+      let delay = 200 + Math.random() * 800;
+      
+      if (url.includes('ajax')) delay += 500;
+      if (url.includes('bz')) delay += 300;
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      try {
+        return await originalFetch.apply(window, args);
+      } catch (error) {
+        console.warn('🛡️ Request blocked, activating stealth mode');
+        throw error;
+      }
+    };
+
+    // XHR interception
+    window.XMLHttpRequest = function() {
+      const xhr = new originalXHR();
+      const originalSend = xhr.send;
+      
+      xhr.send = function(...args) {
+        // Add delay before sending
+        setTimeout(() => {
+          originalSend.apply(xhr, args);
+        }, Math.random() * 500 + 100);
+      };
+      
+      return xhr;
+    };
+  }
+
+  static async monitorInstagramBlocking() {
+    // Monitor for DTSG errors and adapt
+    const originalError = window.onerror;
+    window.onerror = (message, source, lineno, colno, error) => {
+      if (message?.includes('DTSG') || message?.includes('Sorry, something went wrong')) {
+        console.log('🚨 Instagram blocking detected, switching to ultra-stealth mode');
+        this.activateUltraStealthMode();
+      }
+      
+      if (originalError) {
+        return originalError(message, source, lineno, colno, error);
+      }
+    };
+
+    // Monitor fetch errors
+    window.addEventListener('unhandledrejection', (event) => {
+      if (event.reason?.message?.includes('BLOCKED_BY_CLIENT')) {
+        console.log('🚨 Client blocking detected, adjusting behavior');
+        this.activateUltraStealthMode();
+      }
+    });
+  }
+
+  static async activateUltraStealthMode() {
+    console.log('🔄 Ultra Stealth Mode Activated');
+    
+    // 1. Drastically slow down all operations
+    this.stealthMultiplier = 3.0;
+    
+    // 2. Add longer natural breaks
+    await new Promise(resolve => setTimeout(resolve, 10000 + Math.random() * 10000));
+    
+    // 3. Reduce scroll amounts
+    this.maxScrollAmount = 500;
+    
+    // 4. Increase human-like behaviors
+    this.humanBehaviorProbability = 0.8;
+    
+    console.log('✅ Ultra Stealth Mode Ready');
+  }
+
+  static getStealthDelay() {
+    return Math.random() * 1000 * this.stealthMultiplier + 200;
+  }
+
+  static getStealthScrollAmount() {
+    return Math.min(
+      Math.random() * this.maxScrollAmount + 100,
+      this.maxScrollAmount
+    );
+  }
+}
+
+/**
  * Initialize content script
  */
-function initialize() {
-  setupMessageListener();
-  calculateTargetDate();
-  console.log('Instagram DM Time Scroll content script initialized');
+async function initialize() {
+  try {
+    // Initialize stealth measures first
+    await AdvancedInstagramStealth.initializeUltraStealthMode();
+    
+    setupMessageListener();
+    calculateTargetDate();
+    console.log('Instagram DM Time Scroll content script initialized with stealth mode');
+  } catch (error) {
+    console.error('Failed to initialize content script:', error);
+    // Continue without stealth if it fails
+    setupMessageListener();
+    calculateTargetDate();
+  }
 }
 
 /**
@@ -44,10 +264,15 @@ function setupMessageListener() {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       switch (message.action) {
+        case 'ping':
+          sendResponse({ success: true, message: 'Content script is ready' });
+          break;
         case 'scrollToTwoMonthsAgo':
           handleScrollToTwoMonthsAgo(sendResponse);
           break;
-        
+        case 'scrollToMonthsAgo':
+          handleScrollToMonthsAgo(message.months, sendResponse);
+          break;
         default:
           console.warn('Unknown message action:', message.action);
           sendResponse({ success: false, error: 'Unknown action' });
@@ -100,10 +325,55 @@ async function handleScrollToTwoMonthsAgo(sendResponse) {
     // Start scrolling process
     await startScrolling();
     
-    sendResponse({ success: true, message: 'Started scrolling to 2 months ago' });
+    sendResponse({ success: true, message: 'Scrolling started successfully' });
+    
   } catch (error) {
     console.error('Failed to start scrolling:', error);
-    logError(error);
+    isScrolling = false;
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handle scroll to specified months ago request
+ * @param {number} months - Number of months to scroll back
+ * @param {Function} sendResponse - Response callback
+ */
+async function handleScrollToMonthsAgo(months, sendResponse) {
+  try {
+    if (isScrolling) {
+      sendResponse({ success: false, error: 'Already scrolling' });
+      return;
+    }
+    
+    // Check if we're on Instagram
+    if (!window.location.hostname.includes('instagram.com')) {
+      sendResponse({ success: false, error: 'Not on Instagram' });
+      return;
+    }
+    
+    // Check if we're in DMs
+    if (!isInDmSection()) {
+      sendResponse({ success: false, error: 'Not in Instagram DMs' });
+      return;
+    }
+    
+    // Calculate target date based on months
+    const now = new Date();
+    targetDate = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
+    console.log(`Target date set to ${months} months ago:`, targetDate.toDateString());
+    
+    isScrolling = true;
+    scrollAttempts = 0;
+    
+    // Start scrolling process
+    await startScrolling();
+    
+    sendResponse({ success: true, message: `Scrolling started to ${months} months ago` });
+    
+  } catch (error) {
+    console.error('Failed to start scrolling:', error);
+    isScrolling = false;
     sendResponse({ success: false, error: error.message });
   }
 }
@@ -130,11 +400,11 @@ function isInDmSection() {
 }
 
 /**
- * Start the scrolling process
+ * Start the scrolling process with stealth measures
  */
 async function startScrolling() {
   try {
-    console.log('Starting scroll to 2 months ago...');
+    console.log('Starting stealth scroll to target date...');
     
     const dmContainer = getDmContainer();
     if (!dmContainer) {
@@ -147,7 +417,7 @@ async function startScrolling() {
       
       if (currentDate && isDateBeforeTarget(currentDate)) {
         console.log('Reached target date range:', currentDate);
-        showNotification('Reached 2 months ago!');
+        showNotification('Reached target date!');
         break;
       }
       
@@ -156,8 +426,13 @@ async function startScrolling() {
       
       scrollAttempts++;
       
-      // Add human-like delay
-      await delay(getRandomDelay());
+      // Use stealth delay
+      await delay(AdvancedInstagramStealth.getStealthDelay());
+      
+      // Add natural breaks occasionally
+      if (Math.random() < 0.1) {
+        await delay(2000 + Math.random() * 3000);
+      }
     }
     
     if (scrollAttempts >= SCROLL_CONFIG.MAX_SCROLL_ATTEMPTS) {
@@ -314,7 +589,7 @@ function isDateBeforeTarget(date) {
 }
 
 /**
- * Scroll up in the DM container
+ * Scroll up in the DM container with stealth measures
  * @param {Element} container - DM container
  */
 async function scrollUp(container) {
@@ -325,10 +600,20 @@ async function scrollUp(container) {
       throw new Error('No scrollable element found');
     }
     
-    // Scroll up
-    scrollableElement.scrollTop -= SCROLL_CONFIG.SCROLL_AMOUNT;
+    // Use stealth scroll amount
+    const scrollAmount = AdvancedInstagramStealth.getStealthScrollAmount();
+    scrollableElement.scrollTop -= scrollAmount;
     
-    console.log(`Scrolled up ${SCROLL_CONFIG.SCROLL_AMOUNT}px (attempt ${scrollAttempts + 1})`);
+    // Add natural scroll behavior
+    if (Math.random() < 0.3) {
+      // Sometimes scroll in smaller chunks
+      const smallScroll = scrollAmount * 0.5;
+      setTimeout(() => {
+        scrollableElement.scrollTop -= smallScroll;
+      }, 100 + Math.random() * 200);
+    }
+    
+    console.log(`Stealth scrolled up ${scrollAmount}px (attempt ${scrollAttempts + 1})`);
     
   } catch (error) {
     console.error('Failed to scroll:', error);
@@ -417,23 +702,108 @@ function showNotification(text) {
 }
 
 /**
- * Log error to background script
+ * Log error with context
  * @param {Error} error - Error to log
  */
 function logError(error) {
-  chrome.runtime.sendMessage({
-    action: 'logError',
-    error: {
-      message: error.message,
-      stack: error.stack,
-      timestamp: Date.now()
+  console.error('Instagram DM Scroller Error:', {
+    message: error.message,
+    stack: error.stack,
+    timestamp: new Date().toISOString(),
+    url: window.location.href
+  });
+}
+
+/**
+ * Main extension initialization with comprehensive error handling
+ */
+async function initializeExtension() {
+  try {
+    console.log('🚀 Initializing Instagram DM Scroller with stealth mode...');
+    
+    // Step 1: Initialize stealth measures
+    await AdvancedInstagramStealth.initializeUltraStealthMode();
+    
+    // Step 2: Initialize content script
+    await initialize();
+    
+    // Step 3: Test DOM access
+    const testAccess = document.querySelector('div');
+    if (!testAccess) {
+      throw new Error('Cannot access Instagram DOM');
     }
-  }).catch(console.error);
+    
+    // Step 4: Test if we're on Instagram
+    if (!window.location.hostname.includes('instagram.com')) {
+      console.log('Not on Instagram, extension ready but inactive');
+      return;
+    }
+    
+    console.log('✅ Extension initialized successfully with stealth mode');
+    
+  } catch (error) {
+    console.error('❌ Extension initialization failed:', error);
+    
+    // Show user-friendly error message
+    const errorPopup = document.createElement('div');
+    errorPopup.innerHTML = `
+      <div style="
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: white;
+        border: 1px solid #E1306C;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        z-index: 99999;
+        font-family: system-ui;
+        max-width: 300px;
+        color: #262626;
+      ">
+        <h4 style="margin: 0 0 12px; color: #E1306C;">📱 Instagram DM Scroller</h4>
+        <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.4;">
+          Extension loaded with limited functionality.<br>
+          <small style="color: #8E8E8E;">Some features may be restricted due to Instagram's security measures.</small>
+        </p>
+        <div style="display: flex; gap: 8px;">
+          <button onclick="this.parentElement.parentElement.parentElement.remove()" style="
+            background: #E1306C;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+          ">Close</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(errorPopup);
+    
+    // Remove error popup after 10 seconds
+    setTimeout(() => {
+      if (errorPopup.parentElement) {
+        errorPopup.remove();
+      }
+    }, 10000);
+  }
 }
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initialize);
+  document.addEventListener('DOMContentLoaded', initializeExtension);
 } else {
-  initialize();
+  initializeExtension();
 }
+
+// Handle page navigation
+let lastUrl = location.href;
+new MutationObserver(() => {
+  const url = location.href;
+  if (url !== lastUrl) {
+    lastUrl = url;
+    console.log('Page navigated, reinitializing extension...');
+    setTimeout(initializeExtension, 1000); // Wait for page to load
+  }
+}).observe(document, { subtree: true, childList: true });
