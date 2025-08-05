@@ -1,10 +1,9 @@
 /**
- * Background Service Worker for Instagram DM Navigator
- * Handles context menu creation, message routing, and extension lifecycle
+ * Background Service Worker for Instagram DM Time Scroll
+ * Handles context menu creation and message routing
  */
 
-// Context menu ID constants
-const CONTEXT_MENU_ID = 'instagram-dm-navigator';
+const CONTEXT_MENU_ID = 'scroll-to-2-months-ago';
 
 /**
  * Initialize the extension when installed
@@ -14,12 +13,12 @@ chrome.runtime.onInstalled.addListener(async () => {
     // Create context menu for Instagram pages
     await chrome.contextMenus.create({
       id: CONTEXT_MENU_ID,
-      title: 'Navigate Instagram DMs',
+      title: 'Scroll to 2 months ago',
       contexts: ['page'],
       documentUrlPatterns: ['*://www.instagram.com/*']
     });
     
-    console.log('Instagram DM Navigator extension installed successfully');
+    console.log('Instagram DM Time Scroll extension installed successfully');
   } catch (error) {
     console.error('Failed to create context menu:', error);
   }
@@ -33,9 +32,9 @@ chrome.runtime.onInstalled.addListener(async () => {
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === CONTEXT_MENU_ID && tab?.url?.includes('instagram.com')) {
     try {
-      // Send message to content script to activate DM navigation
+      // Send message to content script to start scrolling
       await chrome.tabs.sendMessage(tab.id, {
-        action: 'activateDmNavigation',
+        action: 'scrollToTwoMonthsAgo',
         timestamp: Date.now()
       });
     } catch (error) {
@@ -45,7 +44,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 });
 
 /**
- * Handle messages from content script and popup
+ * Handle messages from content script
  * @param {Object} message - Message object
  * @param {chrome.runtime.MessageSender} sender - Sender information
  * @param {Function} sendResponse - Response callback
@@ -53,16 +52,17 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   try {
     switch (message.action) {
-      case 'getStorageData':
-        handleGetStorageData(message.key, sendResponse);
-        break;
-      
-      case 'setStorageData':
-        handleSetStorageData(message.key, message.value, sendResponse);
-        break;
-      
       case 'logError':
         console.error('Content script error:', message.error);
+        sendResponse({ success: true });
+        break;
+      
+      case 'showNotification':
+        // Show simple notification
+        chrome.action.setBadgeText({ text: message.text || '!' });
+        setTimeout(() => {
+          chrome.action.setBadgeText({ text: '' });
+        }, 3000);
         sendResponse({ success: true });
         break;
       
@@ -75,51 +75,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ success: false, error: error.message });
   }
   
-  // Return true to indicate async response
-  return true;
+  return true; // Keep message channel open for async response
 });
-
-/**
- * Handle storage get requests
- * @param {string} key - Storage key
- * @param {Function} sendResponse - Response callback
- */
-async function handleGetStorageData(key, sendResponse) {
-  try {
-    const result = await chrome.storage.local.get(key);
-    sendResponse({ success: true, data: result[key] });
-  } catch (error) {
-    console.error('Failed to get storage data:', error);
-    sendResponse({ success: false, error: error.message });
-  }
-}
-
-/**
- * Handle storage set requests
- * @param {string} key - Storage key
- * @param {*} value - Value to store
- * @param {Function} sendResponse - Response callback
- */
-async function handleSetStorageData(key, value, sendResponse) {
-  try {
-    await chrome.storage.local.set({ [key]: value });
-    sendResponse({ success: true });
-  } catch (error) {
-    console.error('Failed to set storage data:', error);
-    sendResponse({ success: false, error: error.message });
-  }
-}
 
 /**
  * Handle extension startup
  */
 chrome.runtime.onStartup.addListener(() => {
-  console.log('Instagram DM Navigator extension started');
-});
-
-/**
- * Handle extension update
- */
-chrome.runtime.onUpdateAvailable.addListener(() => {
-  console.log('Instagram DM Navigator update available');
+  console.log('Instagram DM Time Scroll extension started');
 });
