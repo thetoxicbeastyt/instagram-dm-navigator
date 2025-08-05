@@ -1,198 +1,193 @@
-# Instagram DM Navigator
+# Instagram DM Time Scroll Chrome Extension
 
-A Chrome extension that helps you navigate Instagram Direct Messages with date-based filtering and human-like scrolling patterns.
+A simple Chrome extension that automatically scrolls back 2 months in Instagram DM conversations with a single click.
 
 ## Features
 
-- **Date-based Filtering**: Filter messages by exact date, date range, or relative time periods
-- **Human-like Scrolling**: Advanced scrolling patterns that mimic natural user behavior
-- **Visual Highlighting**: Messages matching your filter criteria are highlighted
-- **Progress Tracking**: Real-time progress updates during navigation
-- **Context Menu Integration**: Right-click activation for quick access
-- **Modern UI**: Clean, responsive popup interface
+- **One-Click Scrolling**: Automatically scroll back 2 months in Instagram DMs
+- **Smart Date Detection**: Parses Instagram's date formats and stops at the target date
+- **Human-Like Behavior**: Uses random delays and natural scrolling patterns
+- **Context Menu Access**: Right-click the extension icon for quick access
+- **Clean UI**: Simple popup interface with status feedback
 
 ## Installation
 
-### From Source
+### Method 1: Load Unpacked Extension (Development)
 
-1. Clone or download this repository
+1. Download or clone this repository
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" in the top right
-4. Click "Load unpacked" and select the `instagram-dm-navigator` folder
-5. The extension should now appear in your extensions list
+4. Click "Load unpacked" and select the extension folder
+5. The extension icon should appear in your toolbar
 
-### Requirements
+### Method 2: Install from Chrome Web Store (Coming Soon)
 
-- Google Chrome (Manifest V3 compatible)
-- Instagram account and access to Instagram DMs
+1. Search for "Instagram DM Time Scroll" in the Chrome Web Store
+2. Click "Add to Chrome"
+3. Confirm the installation
 
 ## Usage
 
 ### Basic Usage
 
-1. **Navigate to Instagram DMs**
+1. **Navigate to Instagram DMs**:
    - Go to [instagram.com](https://instagram.com)
-   - Log in to your account
-   - Navigate to your Direct Messages
+   - Click on the Direct Messages icon (paper plane)
+   - Open any conversation
 
-2. **Open the Extension**
-   - Click the extension icon in your Chrome toolbar
-   - Or right-click on the page and select "Navigate Instagram DMs"
+2. **Start Scrolling**:
+   - Click the extension icon in your toolbar
+   - Click "Scroll to 2 Months Ago" in the popup
+   - OR right-click the extension icon and select "Scroll to 2 months ago"
 
-3. **Configure Date Filter**
-   - Select a filter type (Exact Date, Date Range, Days Ago, etc.)
-   - Choose your target date or time period
-   - Use quick date buttons for common periods
+3. **Wait for Completion**:
+   - The extension will automatically scroll up
+   - It will stop when it reaches messages from approximately 2 months ago
+   - You'll see a notification when complete
 
-4. **Start Navigation**
-   - Click "Activate Navigation"
-   - The extension will scroll through your DMs
-   - Matching messages will be highlighted
+### Advanced Usage
 
-### Filter Types
+- **Context Menu**: Right-click the extension icon for quick access without opening the popup
+- **Status Feedback**: The extension shows progress and completion status
+- **Error Handling**: Graceful handling of Instagram layout changes and network issues
 
-- **Exact Date**: Find messages from a specific date
-- **Date Range**: Find messages within 24 hours of a date
-- **Days Ago**: Find messages from X days ago
-- **Weeks Ago**: Find messages from X weeks ago
-- **Months Ago**: Find messages from X months ago
+## How It Works
 
-### Navigation Options
+### Date Detection
 
-- **Scroll Direction**: Choose to scroll up (older messages) or down (newer messages)
-- **Max Scrolls**: Set the maximum number of scroll operations
-- **Progress Tracking**: Monitor scroll count and found messages
+The extension identifies Instagram's date formats:
 
-## Architecture
+- **Relative dates**: "2 days ago", "3 months ago"
+- **Absolute dates**: "Dec 15", "January 3"
+- **ISO dates**: From `datetime` attributes
+- **Title attributes**: From message timestamps
 
-The extension follows a modular architecture with clear separation of concerns:
+### Smart Scrolling
 
-```
-instagram-dm-navigator/
-├── manifest.json          # Extension configuration
-├── background.js          # Service worker for background tasks
-├── content-script.js      # Main content script for DOM interaction
-├── popup/                 # Popup UI components
-│   ├── popup.html        # Popup HTML structure
-│   ├── popup.js          # Popup JavaScript logic
-│   └── popup.css         # Popup styling
-├── utils/                 # Utility modules
-│   ├── date-calculator.js # Date parsing and filtering
-│   ├── dom-helpers.js    # DOM manipulation utilities
-│   └── scroll-controller.js # Human-like scrolling logic
-└── icons/                # Extension icons
-    ├── icon16.png
-    ├── icon48.png
-    └── icon128.png
-```
+1. **Target Calculation**: Calculates the date 2 months ago from today
+2. **DOM Analysis**: Finds the scrollable DM conversation container
+3. **Incremental Scrolling**: Scrolls up in small increments to trigger lazy loading
+4. **Date Checking**: After each scroll, checks visible dates against target
+5. **Completion**: Stops when target date range is reached
 
-### Key Components
+### Human-Like Behavior
 
-- **Background Service Worker**: Handles context menu creation and message routing
-- **Content Script**: Manages DOM interactions and Instagram-specific logic
-- **Utility Modules**: Modular code for date calculations, DOM helpers, and scrolling
-- **Popup Interface**: Modern UI for configuration and control
+- **Random Delays**: 200-800ms delays between scrolls
+- **Natural Patterns**: Mimics human scrolling behavior
+- **Rate Limiting**: Respects Instagram's loading patterns
+- **Error Recovery**: Handles network issues and DOM changes
 
 ## Technical Details
 
-### Manifest V3 Compliance
+### File Structure
 
-- Uses service workers instead of background pages
-- Implements proper permission handling
-- Follows Chrome extension best practices
+```
+instagram-dm-time-scroll/
+├── manifest.json          # Extension manifest (Manifest V3)
+├── background.js          # Service worker for context menu
+├── content.js            # Content script for Instagram interaction
+├── popup.html            # Extension popup interface
+├── popup.js              # Popup script logic
+├── icons/                # Extension icons
+│   ├── icon16.png
+│   ├── icon48.png
+│   └── icon128.png
+└── README.md             # This file
+```
 
-### Human-like Scrolling
+### Permissions
 
-The extension implements sophisticated scrolling patterns to avoid detection:
+- `activeTab`: Access to the current Instagram tab
+- `contextMenus`: Create right-click context menu
+- `host_permissions`: Access to Instagram.com
 
-- **Variable Scroll Amounts**: Random scroll distances within configured ranges
-- **Natural Pauses**: Random delays between scroll operations
-- **Smooth Animations**: Easing functions for realistic movement
-- **Acceleration/Deceleration**: Mimics natural scroll behavior
+### Browser Compatibility
 
-### Error Handling
+- **Chrome**: 88+ (Manifest V3 support)
+- **Edge**: 88+ (Chromium-based)
+- **Opera**: 74+ (Chromium-based)
 
-- Comprehensive try-catch blocks throughout the codebase
-- Graceful degradation when elements aren't found
-- User-friendly error messages
-- Automatic cleanup on errors
+## Configuration
 
-### Performance Optimization
+### Scroll Settings
 
-- Efficient DOM queries with multiple fallback selectors
-- Debounced progress updates
-- Memory leak prevention with proper cleanup
-- Minimal impact on page performance
+You can modify these constants in `content.js`:
 
-## Development
+```javascript
+const SCROLL_CONFIG = {
+  DELAY_MIN: 200,        // Minimum delay between scrolls (ms)
+  DELAY_MAX: 800,        // Maximum delay between scrolls (ms)
+  SCROLL_AMOUNT: 300,    // Pixels to scroll each time
+  MAX_SCROLL_ATTEMPTS: 100, // Maximum scroll attempts
+  LOAD_WAIT_TIME: 1000   // Wait time for content to load (ms)
+};
+```
 
-### Prerequisites
+### Date Detection
 
-- Node.js (for development tools)
-- Chrome browser with developer mode enabled
+Modify date selectors in `content.js`:
 
-### Local Development
-
-1. Clone the repository
-2. Make your changes
-3. Load the extension in Chrome as described in Installation
-4. Test on Instagram DMs
-
-### Code Standards
-
-- ES6+ features (async/await, destructuring, modules)
-- Comprehensive JSDoc comments
-- SOLID principles
-- Error boundaries and proper error handling
-- Meaningful variable names and functions
-
-### Testing
-
-The extension can be tested by:
-
-1. Loading it in Chrome
-2. Navigating to Instagram DMs
-3. Using various date filters
-4. Testing different scroll directions
-5. Verifying message highlighting
-
-## Privacy & Security
-
-- **No Data Collection**: The extension doesn't collect or transmit any user data
-- **Local Processing**: All filtering and scrolling happens locally in the browser
-- **Minimal Permissions**: Only requests necessary permissions for Instagram DMs
-- **Open Source**: Full transparency of code and functionality
+```javascript
+const DATE_CONFIG = {
+  TARGET_MONTHS_AGO: 2,  // Target months to scroll back
+  DATE_SELECTORS: [       // CSS selectors for date elements
+    '[data-testid="message-timestamp"]',
+    'time[datetime]',
+    '.timestamp',
+    // ... more selectors
+  ]
+};
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Extension not working on Instagram**
-   - Ensure you're on instagram.com
-   - Check that you're in the DMs section
-   - Verify the extension is enabled
+**Extension doesn't work on Instagram**
+- Ensure you're on instagram.com
+- Make sure you're in a DM conversation
+- Check that the page is fully loaded
 
-2. **No messages found**
-   - Try different date ranges
-   - Check if messages exist for the selected time period
-   - Verify the scroll direction is correct
+**Scrolling stops too early**
+- Instagram may have changed their DOM structure
+- Check the browser console for errors
+- Try refreshing the page and retrying
 
-3. **Scrolling stops unexpectedly**
-   - Instagram may have loaded all available messages
-   - Try adjusting the max scrolls setting
-   - Check for any error messages in the console
+**Scrolling doesn't stop**
+- The conversation may not have messages from 2 months ago
+- Instagram's date format may have changed
+- Check browser console for parsing errors
 
 ### Debug Mode
 
-To enable debug logging:
-
-1. Open Chrome DevTools
+1. Open Chrome DevTools (F12)
 2. Go to the Console tab
-3. Look for messages from "Instagram DM Navigator"
+3. Look for messages from "Instagram DM Time Scroll"
+4. Check for any error messages
 
-## Contributing
+### Error Reporting
 
-Contributions are welcome! Please:
+If you encounter issues:
+
+1. Open the browser console
+2. Look for error messages
+3. Take a screenshot of the console
+4. Report the issue with:
+   - Chrome version
+   - Instagram URL
+   - Console error messages
+   - Steps to reproduce
+
+## Development
+
+### Building from Source
+
+1. Clone the repository
+2. Make your changes
+3. Load as unpacked extension in Chrome
+4. Test on Instagram DMs
+
+### Contributing
 
 1. Fork the repository
 2. Create a feature branch
@@ -200,23 +195,38 @@ Contributions are welcome! Please:
 4. Test thoroughly
 5. Submit a pull request
 
+### Testing
+
+- Test on different Instagram DM conversation lengths
+- Test with various date formats
+- Test on different Chrome versions
+- Test with slow network connections
+
+## Privacy & Security
+
+- **No Data Collection**: The extension doesn't collect or store any personal data
+- **Local Processing**: All date parsing and scrolling happens locally
+- **Minimal Permissions**: Only requests necessary permissions for functionality
+- **Open Source**: Code is transparent and auditable
+
 ## License
 
 This project is open source and available under the MIT License.
 
-## Disclaimer
-
-This extension is for educational and personal use only. Users are responsible for complying with Instagram's Terms of Service and applicable laws. The developers are not responsible for any misuse of this tool.
-
 ## Support
 
-For issues, questions, or feature requests:
+For issues, questions, or contributions:
 
 1. Check the troubleshooting section above
-2. Review the code comments for technical details
-3. Open an issue on the repository
-4. Ensure you're using the latest version
+2. Search existing issues
+3. Create a new issue with detailed information
+4. Include browser version and Instagram URL
 
----
+## Changelog
 
-**Note**: This extension is designed to work with Instagram's web interface. Instagram may update their interface, which could affect functionality. The extension will be updated to maintain compatibility.
+### Version 1.0.0
+- Initial release
+- Basic 2-month scroll functionality
+- Context menu support
+- Simple popup interface
+- Human-like scrolling behavior

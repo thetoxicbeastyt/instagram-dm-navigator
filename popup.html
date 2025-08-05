@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Instagram DM Time Scroll</title>
+  <style>
+    body {
+      width: 300px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    
+    .container {
+      text-align: center;
+    }
+    
+    .logo {
+      font-size: 24px;
+      font-weight: bold;
+      margin-bottom: 10px;
+    }
+    
+    .description {
+      font-size: 14px;
+      margin-bottom: 20px;
+      opacity: 0.9;
+      line-height: 1.4;
+    }
+    
+    .scroll-button {
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      width: 100%;
+      margin-bottom: 15px;
+    }
+    
+    .scroll-button:hover {
+      background: rgba(255, 255, 255, 0.3);
+      border-color: rgba(255, 255, 255, 0.5);
+      transform: translateY(-2px);
+    }
+    
+    .scroll-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .status {
+      font-size: 12px;
+      margin-top: 15px;
+      padding: 10px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      display: none;
+    }
+    
+    .status.success {
+      background: rgba(76, 175, 80, 0.2);
+      border: 1px solid rgba(76, 175, 80, 0.3);
+    }
+    
+    .status.error {
+      background: rgba(244, 67, 54, 0.2);
+      border: 1px solid rgba(244, 67, 54, 0.3);
+    }
+    
+    .instructions {
+      font-size: 12px;
+      margin-top: 15px;
+      opacity: 0.8;
+      line-height: 1.5;
+    }
+    
+    .context-menu-note {
+      font-size: 11px;
+      margin-top: 10px;
+      opacity: 0.7;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">📱</div>
+    <div class="description">
+      Automatically scroll back 2 months in Instagram DMs with a single click
+    </div>
+    
+    <button id="scrollButton" class="scroll-button">
+      Scroll to 2 Months Ago
+    </button>
+    
+    <div id="status" class="status"></div>
+    
+    <div class="instructions">
+      <strong>How to use:</strong><br>
+      1. Go to Instagram DMs<br>
+      2. Open a conversation<br>
+      3. Click the button above or right-click the extension icon
+    </div>
+    
+    <div class="context-menu-note">
+      💡 Tip: Right-click the extension icon for quick access
+    </div>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
