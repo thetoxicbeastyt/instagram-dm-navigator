@@ -63,7 +63,7 @@ document.addEventListener("DOMContentLoaded", function() {
         <div style="text-align: left; margin: 10px 0;">
           <p><strong>Messages:</strong> ${results.messages}</p>
           <p><strong>Timestamps:</strong> ${results.timestamps}</p>
-          <p><strong>Videos:</strong> ${results.videos}</p>
+          <p><strong>Reels:</strong> ${results.reels}</p>
         </div>
       `;
       resultsContent.innerHTML = html;

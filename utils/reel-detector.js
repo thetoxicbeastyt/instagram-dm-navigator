@@ -135,6 +135,20 @@ class ReelDetector {
    * @returns {Object} Visual-based detection result
    */
   detectByVisualIndicators(messageElement) {
+    // Add this check at the start of detectByVisualIndicators() before the selector loop
+    const uiElementText = messageElement.textContent || '';
+    const isUIElement = /^(Video Call|Audio Call|Add photo or video|Choose|Send|Like|Voice clip)$/i.test(uiElementText.trim());
+    if (isUIElement) {
+      return {
+        isReel: false,
+        confidence: 0,
+        reelId: null,
+        detectionMethod: 'visual_indicators',
+        reelUrl: null,
+        messageElement: messageElement
+      };
+    }
+
     const visualSelectors = [
       // Instagram's aria-label patterns for reels
       '[aria-label*="reel"]',

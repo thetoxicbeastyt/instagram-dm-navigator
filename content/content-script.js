@@ -787,6 +787,14 @@ class ReelDetector {
       const messages = await window.detectMessageContainers();
       const timestamps = await window.detectTimestampElements();
       
+      // Add message position analysis to see what part of conversation is loaded
+      if (messages.elements.length > 0) {
+        const firstMessage = messages.elements[0]?.textContent?.substring(0, 50);
+        const lastMessage = messages.elements[messages.elements.length - 1]?.textContent?.substring(0, 50);
+        console.log(`[DEBUG] First message: "${firstMessage}"`);
+        console.log(`[DEBUG] Last message: "${lastMessage}"`);
+      }
+
       // Test reel detection on message containers
       let reels = { elements: [], confidence: 0, method: 'none' };
       if (messages.elements.length > 0) {
@@ -804,6 +812,11 @@ class ReelDetector {
         timestamps: `${timestamps.elements.length} found (confidence: ${timestamps.confidence})`,
         reels: `${reels.elements.length} found (confidence: ${reels.confidence})`
       };
+      
+      // Add after the existing message detection
+      console.log(`[DEBUG] Scroll position: ${window.scrollY}, Document height: ${document.documentElement.scrollHeight}`);
+      console.log(`[DEBUG] Currently scanning ${messages.elements.length} loaded messages`);
+      console.log(`[DEBUG] Conversation URL: ${window.location.href}`);
       
       console.log('Test Results:', results);
       return results;
