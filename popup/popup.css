@@ -1,0 +1,37 @@
+body {
+  width: 300px;
+  height: 200px;
+  padding: 10px;
+  font-size: 14px;
+  background-color: #f0f0f0;
+  text-align: center;
+}
+
+#results {
+  margin-top: 15px;
+  padding: 10px;
+  background-color: white;
+  border-radius: 5px;
+  border: 1px solid #ddd;
+}
+
+#results h3 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 16px;
+}
+
+#results-content p {
+  margin: 5px 0;
+  padding: 3px 0;
+  border-bottom: 1px solid #eee;
+}
+
+#results-content p:last-child {
+  border-bottom: none;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
