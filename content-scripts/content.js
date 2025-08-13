@@ -514,6 +514,17 @@ let mutationObserver = null;
 // Cached results to prevent reprocessing
 const processedReels = new Set();
 
+// Map to store detected reels and avoid duplicates
+const detectedReelsMap = new Map();
+
+// Debouncing for storage operations
+let storageDebounceTimer = null;
+const STORAGE_DEBOUNCE_DELAY = 1000; // 1 second
+
+// Storage constants
+const MAX_REELS_STORAGE = 1000;
+const STORAGE_KEY_PREFIX = 'ig_reel_data_';
+
 /**
  * Throttle function for performance optimization
  * @param {Function} func - Function to throttle
@@ -676,8 +687,561 @@ function scanForNewReels() {
 }
 
 /**
+ * Detect emoji reactions for Instagram reel containers
+ * Checks for SVG icons, Unicode emojis, and reaction container elements
+ * @param {Element} reelElement - The reel DOM element
+ * @returns {Object} Reaction data with hasReaction and reactionType
+ */
+function detectReelReactions(reelElement) {
+  try {
+    console.log('[IG Reel Tracker] Detecting reactions for reel element...');
+    
+    // Defensive null check
+    if (!reelElement) {
+      console.warn('[IG Reel Tracker] Null reel element provided for reaction detection');
+      return { hasReaction: false, reactionType: null };
+    }
+    
+    // Find the message container that contains this reel
+    const messageContainer = findMessageContainer(reelElement);
+    if (!messageContainer) {
+      console.log('[IG Reel Tracker] No message container found for reaction detection');
+      return { hasReaction: false, reactionType: null };
+    }
+    
+    console.log('[IG Reel Tracker] Searching for reactions in message container and surrounding areas...');
+    
+    // Multiple location strategies for reaction detection
+    const searchAreas = [
+      messageContainer, // Primary container
+      messageContainer.parentElement, // Parent container
+      messageContainer.nextElementSibling, // Next sibling (reactions often appear after)
+      messageContainer.previousElementSibling, // Previous sibling
+    ].filter(Boolean); // Remove null elements
+    
+    // Instagram reaction patterns to search for
+    const reactionSelectors = [
+      // SVG-based reactions
+      'svg[aria-label*="reaction" i]',
+      'svg[aria-label*="heart" i]',
+      'svg[aria-label*="like" i]',
+      'svg[aria-label*="love" i]',
+      'svg[aria-label*="laugh" i]',
+      'svg[aria-label*="wow" i]',
+      'svg[aria-label*="angry" i]',
+      'svg[aria-label*="sad" i]',
+      
+      // Reaction container elements
+      '[data-testid*="reaction"]',
+      '[aria-label*="reaction" i]',
+      '.reaction-button',
+      '.reaction-pill',
+      '.message-reaction',
+      
+      // Emoji-based reactions (span with role="img")
+      'span[role="img"][aria-label*="heart" i]',
+      'span[role="img"][aria-label*="laugh" i]',
+      'span[role="img"][aria-label*="wow" i]',
+      'span[role="img"][aria-label*="angry" i]',
+      'span[role="img"][aria-label*="sad" i]',
+      'span[role="img"][aria-label*="like" i]',
+      
+      // Generic emoji containers
+      'span[role="img"]',
+      '[class*="emoji"]',
+      '[class*="reaction"]'
+    ];
+    
+    // Common emoji Unicode patterns for Instagram reactions
+    const emojiPatterns = [
+      /❤️|♥️|💖|💕|💗/g, // Heart variants
+      /😂|🤣|😆|😄/g, // Laugh variants  
+      /😮|😯|😲|🤯/g, // Wow/surprise variants
+      /😡|😠|🤬/g, // Angry variants
+      /😢|😭|😔|☹️/g, // Sad variants
+      /👍|👏|🙌/g, // Like/approval variants
+      /🔥|💯|✨/g // Fire/100/sparkle variants
+    ];
+    
+    const reactionTypes = [
+      'heart', 'laugh', 'wow', 'angry', 'sad', 'like', 'fire'
+    ];
+    
+    // Search each area for reactions
+    for (const area of searchAreas) {
+      console.log(`[IG Reel Tracker] Checking area: ${area.tagName}${area.className ? '.' + area.className : ''}`);
+      
+      // Check for reaction selector patterns
+      for (const selector of reactionSelectors) {
+        try {
+          const reactionElements = area.querySelectorAll(selector);
+          if (reactionElements.length > 0) {
+            console.log(`[IG Reel Tracker] Found ${reactionElements.length} reaction elements with selector: ${selector}`);
+            
+            // Try to determine reaction type from aria-label or content
+            for (const reactionEl of reactionElements) {
+              const ariaLabel = reactionEl.getAttribute('aria-label') || '';
+              const textContent = reactionEl.textContent || '';
+              
+              console.log(`[IG Reel Tracker] Reaction element aria-label: "${ariaLabel}", content: "${textContent}"`);
+              
+              // Match reaction type
+              const detectedType = determineReactionType(ariaLabel + ' ' + textContent);
+              if (detectedType) {
+                console.log(`[IG Reel Tracker] Detected reaction type: ${detectedType}`);
+                return { hasReaction: true, reactionType: detectedType };
+              }
+            }
+            
+            // If we found reaction elements but couldn't determine type
+            console.log('[IG Reel Tracker] Found reactions but could not determine specific type');
+            return { hasReaction: true, reactionType: 'unknown' };
+          }
+        } catch (selectorError) {
+          console.warn(`[IG Reel Tracker] Reaction selector failed: ${selector}`, selectorError);
+          continue;
+        }
+      }
+      
+      // Check for Unicode emoji patterns in text content
+      const areaText = area.textContent || '';
+      for (let i = 0; i < emojiPatterns.length; i++) {
+        const pattern = emojiPatterns[i];
+        const matches = areaText.match(pattern);
+        if (matches && matches.length > 0) {
+          const detectedType = reactionTypes[i];
+          console.log(`[IG Reel Tracker] Found emoji reactions: ${matches.join(', ')} - Type: ${detectedType}`);
+          return { hasReaction: true, reactionType: detectedType };
+        }
+      }
+    }
+    
+    // Check for lazy-loaded reactions by looking for reaction count indicators
+    for (const area of searchAreas) {
+      const reactionCounts = area.querySelectorAll('[class*="reaction-count"], [class*="emoji-count"], [aria-label*="reaction" i]');
+      if (reactionCounts.length > 0) {
+        console.log(`[IG Reel Tracker] Found reaction count indicators, likely lazy-loaded reactions`);
+        return { hasReaction: true, reactionType: 'lazy-loaded' };
+      }
+    }
+    
+    console.log('[IG Reel Tracker] No reactions detected for this reel');
+    return { hasReaction: false, reactionType: null };
+    
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error detecting reel reactions:', error);
+    return { hasReaction: false, reactionType: null };
+  }
+}
+
+/**
+ * Determine reaction type from text content or aria labels
+ * @param {string} text - Text to analyze
+ * @returns {string|null} Detected reaction type or null
+ */
+function determineReactionType(text) {
+  const lowerText = text.toLowerCase();
+  
+  // Heart/like patterns
+  if (lowerText.includes('heart') || lowerText.includes('love') || lowerText.includes('like')) {
+    return 'heart';
+  }
+  
+  // Laugh patterns
+  if (lowerText.includes('laugh') || lowerText.includes('funny') || lowerText.includes('haha')) {
+    return 'laugh';
+  }
+  
+  // Wow/surprise patterns
+  if (lowerText.includes('wow') || lowerText.includes('surprise') || lowerText.includes('amazing')) {
+    return 'wow';
+  }
+  
+  // Angry patterns
+  if (lowerText.includes('angry') || lowerText.includes('mad') || lowerText.includes('upset')) {
+    return 'angry';
+  }
+  
+  // Sad patterns
+  if (lowerText.includes('sad') || lowerText.includes('cry') || lowerText.includes('tear')) {
+    return 'sad';
+  }
+  
+  // Fire/lit patterns
+  if (lowerText.includes('fire') || lowerText.includes('lit') || lowerText.includes('100')) {
+    return 'fire';
+  }
+  
+  return null;
+}
+
+/**
+ * Extract reel ID from DOM element structure
+ * Checks data attributes, URL parameters, and element properties
+ * @param {Element} reelElement - The reel DOM element
+ * @returns {string|null} Extracted reel ID or null if not found
+ */
+function extractReelIdFromDOMElement(reelElement) {
+  try {
+    console.log('[IG Reel Tracker] Extracting reel ID from DOM element:', reelElement);
+    
+    // Defensive null check
+    if (!reelElement) {
+      console.warn('[IG Reel Tracker] Null reel element provided');
+      return null;
+    }
+    
+    // Strategy 1: Check data attributes
+    const dataAttributes = [
+      'data-reel-id',
+      'data-video-id', 
+      'data-media-id',
+      'data-id',
+      'data-testid',
+      'data-story-id'
+    ];
+    
+    for (const attr of dataAttributes) {
+      const value = reelElement.getAttribute(attr);
+      if (value && value.length > 0) {
+        console.log(`[IG Reel Tracker] Found reel ID in ${attr}: ${value}`);
+        return value;
+      }
+    }
+    
+    // Strategy 2: Check src/href URLs for reel IDs
+    const urlAttributes = ['src', 'href', 'data-src', 'poster'];
+    for (const attr of urlAttributes) {
+      const url = reelElement.getAttribute(attr);
+      if (url) {
+        const reelId = extractReelIdFromUrl(url);
+        if (reelId) {
+          console.log(`[IG Reel Tracker] Found reel ID in ${attr} URL: ${reelId}`);
+          return reelId;
+        }
+      }
+    }
+    
+    // Strategy 3: Check parent elements for data attributes
+    let currentElement = reelElement.parentElement;
+    let depth = 0;
+    const maxDepth = 5;
+    
+    while (currentElement && depth < maxDepth) {
+      for (const attr of dataAttributes) {
+        const value = currentElement.getAttribute(attr);
+        if (value && value.length > 0) {
+          console.log(`[IG Reel Tracker] Found reel ID in parent ${attr}: ${value}`);
+          return value;
+        }
+      }
+      
+      // Check parent URLs
+      for (const attr of urlAttributes) {
+        const url = currentElement.getAttribute(attr);
+        if (url) {
+          const reelId = extractReelIdFromUrl(url);
+          if (reelId) {
+            console.log(`[IG Reel Tracker] Found reel ID in parent ${attr} URL: ${reelId}`);
+            return reelId;
+          }
+        }
+      }
+      
+      currentElement = currentElement.parentElement;
+      depth++;
+    }
+    
+    // Strategy 4: Generate unique ID based on element properties
+    const fallbackId = generateUniqueId(reelElement);
+    console.log(`[IG Reel Tracker] Generated fallback reel ID: ${fallbackId}`);
+    return fallbackId;
+    
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error extracting reel ID from DOM element:', error);
+    return generateUniqueId(reelElement);
+  }
+}
+
+/**
+ * Check available storage quota before writing
+ * @returns {Promise<boolean>} True if storage is available
+ */
+async function checkStorageQuota() {
+  try {
+    if ('storage' in navigator && 'estimate' in navigator.storage) {
+      const estimate = await navigator.storage.estimate();
+      const usedBytes = estimate.usage || 0;
+      const quotaBytes = estimate.quota || 0;
+      
+      // Check if we're using more than 80% of available storage
+      const usagePercentage = (usedBytes / quotaBytes) * 100;
+      
+      console.log(`[IG Reel Tracker] Storage usage: ${usedBytes} / ${quotaBytes} bytes (${usagePercentage.toFixed(1)}%)`);
+      
+      if (usagePercentage > 80) {
+        console.warn('[IG Reel Tracker] Storage quota approaching limit, skipping save');
+        return false;
+      }
+    }
+    return true;
+  } catch (error) {
+    console.warn('[IG Reel Tracker] Could not check storage quota:', error);
+    return true; // Proceed with storage if quota check fails
+  }
+}
+
+/**
+ * Persist reel data to chrome.storage.local with debouncing
+ * @param {boolean} immediate - Force immediate save without debouncing
+ */
+function persistReelData(immediate = false) {
+  try {
+    console.log('[IG Reel Tracker] Scheduling reel data persistence...');
+    
+    // Clear existing timer if not immediate
+    if (storageDebounceTimer && !immediate) {
+      clearTimeout(storageDebounceTimer);
+    }
+    
+    const saveFunction = async () => {
+      try {
+        console.log('[IG Reel Tracker] Executing reel data persistence...');
+        
+        // Check storage quota before proceeding
+        const hasStorageSpace = await checkStorageQuota();
+        if (!hasStorageSpace) {
+          console.warn('[IG Reel Tracker] Skipping persistence due to storage quota limits');
+          return;
+        }
+        
+        const conversationId = getCurrentConversationId();
+        if (!conversationId) {
+          console.warn('[IG Reel Tracker] No conversation ID available, skipping persistence');
+          return;
+        }
+        
+        // Convert Map to array and clean DOM references for storage
+        const reelsArray = Array.from(detectedReelsMap.values()).map(reel => ({
+          reelId: reel.reelId,
+          timestamp: reel.timestamp,
+          selector: reel.selector,
+          extractionMethod: reel.extractionMethod,
+          hasReaction: reel.hasReaction,
+          reactionType: reel.reactionType,
+          // Remove domElement reference for storage
+          domPath: reel.domElement ? generateDOMPath(reel.domElement) : null
+        }));
+        
+        if (reelsArray.length === 0) {
+          console.log('[IG Reel Tracker] No reels to persist');
+          return;
+        }
+        
+        // Get existing data for this conversation
+        const storageKey = STORAGE_KEY_PREFIX + conversationId;
+        const existingData = await getStoredReelData(conversationId);
+        
+        // Merge new reels with existing data
+        const mergedReels = mergeReelData(existingData.reels || [], reelsArray);
+        
+        // Limit to MAX_REELS_STORAGE most recent reels
+        const limitedReels = limitReelStorage(mergedReels);
+        
+        // Create storage structure
+        const storageData = {
+          conversationId: conversationId,
+          reels: limitedReels,
+          lastUpdated: Date.now()
+        };
+        
+        // Save to chrome.storage.local
+        await new Promise((resolve, reject) => {
+          chrome.storage.local.set({ [storageKey]: storageData }, () => {
+            if (chrome.runtime.lastError) {
+              reject(chrome.runtime.lastError);
+            } else {
+              resolve();
+            }
+          });
+        });
+        
+        console.log(`[IG Reel Tracker] Successfully persisted ${limitedReels.length} reels for conversation ${conversationId}`);
+        
+        // Send update message to service worker
+        await notifyServiceWorkerOfUpdate(conversationId, limitedReels.length);
+        
+      } catch (error) {
+        console.error('[IG Reel Tracker] Error persisting reel data:', error);
+        handleStorageError(error);
+      }
+    };
+    
+    if (immediate) {
+      saveFunction();
+    } else {
+      storageDebounceTimer = setTimeout(saveFunction, STORAGE_DEBOUNCE_DELAY);
+    }
+    
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error scheduling reel data persistence:', error);
+  }
+}
+
+/**
+ * Get stored reel data for a conversation
+ * @param {string} conversationId - The conversation ID
+ * @returns {Promise<Object>} Stored reel data
+ */
+async function getStoredReelData(conversationId) {
+  try {
+    const storageKey = STORAGE_KEY_PREFIX + conversationId;
+    
+    return new Promise((resolve) => {
+      chrome.storage.local.get([storageKey], (result) => {
+        if (chrome.runtime.lastError) {
+          console.warn('[IG Reel Tracker] Error getting stored data:', chrome.runtime.lastError);
+          resolve({ reels: [], lastUpdated: null });
+        } else {
+          resolve(result[storageKey] || { reels: [], lastUpdated: null });
+        }
+      });
+    });
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error getting stored reel data:', error);
+    return { reels: [], lastUpdated: null };
+  }
+}
+
+/**
+ * Merge new reel data with existing stored data
+ * @param {Array} existingReels - Previously stored reels
+ * @param {Array} newReels - Newly detected reels
+ * @returns {Array} Merged reel array
+ */
+function mergeReelData(existingReels, newReels) {
+  try {
+    console.log(`[IG Reel Tracker] Merging ${newReels.length} new reels with ${existingReels.length} existing reels`);
+    
+    // Create a Map of existing reels by reelId for fast lookups
+    const existingReelsMap = new Map();
+    existingReels.forEach(reel => {
+      existingReelsMap.set(reel.reelId, reel);
+    });
+    
+    // Add new reels, updating existing ones if found
+    newReels.forEach(newReel => {
+      const existingReel = existingReelsMap.get(newReel.reelId);
+      if (existingReel) {
+        // Update existing reel with new reaction data if available
+        existingReel.hasReaction = newReel.hasReaction;
+        existingReel.reactionType = newReel.reactionType;
+        existingReel.lastUpdated = newReel.timestamp;
+        console.log(`[IG Reel Tracker] Updated existing reel: ${newReel.reelId}`);
+      } else {
+        // Add new reel
+        existingReelsMap.set(newReel.reelId, newReel);
+        console.log(`[IG Reel Tracker] Added new reel: ${newReel.reelId}`);
+      }
+    });
+    
+    // Convert back to array and sort by timestamp (newest first)
+    const mergedArray = Array.from(existingReelsMap.values())
+      .sort((a, b) => b.timestamp - a.timestamp);
+    
+    console.log(`[IG Reel Tracker] Merge complete: ${mergedArray.length} total reels`);
+    return mergedArray;
+    
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error merging reel data:', error);
+    return newReels; // Return new reels as fallback
+  }
+}
+
+/**
+ * Limit reel storage to prevent overflow
+ * @param {Array} reels - Array of reel objects
+ * @returns {Array} Limited reel array
+ */
+function limitReelStorage(reels) {
+  try {
+    if (reels.length <= MAX_REELS_STORAGE) {
+      return reels;
+    }
+    
+    console.log(`[IG Reel Tracker] Limiting storage from ${reels.length} to ${MAX_REELS_STORAGE} reels`);
+    
+    // Keep only the most recent MAX_REELS_STORAGE reels
+    return reels
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, MAX_REELS_STORAGE);
+      
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error limiting reel storage:', error);
+    return reels.slice(0, MAX_REELS_STORAGE); // Fallback to simple slice
+  }
+}
+
+/**
+ * Send update message to service worker with reel count
+ * @param {string} conversationId - The conversation ID
+ * @param {number} reelCount - Number of reels detected
+ */
+async function notifyServiceWorkerOfUpdate(conversationId, reelCount) {
+  try {
+    console.log(`[IG Reel Tracker] Notifying service worker of ${reelCount} reels in conversation ${conversationId}`);
+    
+    const updateMessage = {
+      action: 'reelDataUpdated',
+      data: {
+        conversationId: conversationId,
+        reelCount: reelCount,
+        timestamp: Date.now(),
+        url: window.location.href
+      }
+    };
+    
+    chrome.runtime.sendMessage(updateMessage, (response) => {
+      if (chrome.runtime.lastError) {
+        console.warn('[IG Reel Tracker] Error sending update to service worker:', chrome.runtime.lastError);
+      } else {
+        console.log('[IG Reel Tracker] Service worker notified successfully:', response);
+      }
+    });
+    
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error notifying service worker:', error);
+  }
+}
+
+/**
+ * Handle storage errors gracefully
+ * @param {Error} error - The storage error
+ */
+function handleStorageError(error) {
+  try {
+    console.error('[IG Reel Tracker] Storage error details:', error);
+    
+    // Check for specific error types
+    if (error.message && error.message.includes('QUOTA_EXCEEDED')) {
+      console.error('[IG Reel Tracker] Storage quota exceeded - clearing old data');
+      // Could implement cleanup logic here
+    } else if (error.message && error.message.includes('MAX_WRITE_OPERATIONS_PER_MINUTE')) {
+      console.error('[IG Reel Tracker] Too many storage operations - slowing down');
+      // Could implement rate limiting here
+    }
+    
+    // Log error for debugging but don't crash the extension
+    console.warn('[IG Reel Tracker] Continuing operation despite storage error');
+    
+  } catch (handlingError) {
+    console.error('[IG Reel Tracker] Error handling storage error:', handlingError);
+  }
+}
+
+/**
  * Handle DOM changes detected by mutation observer
- * Optimized for Phase 2 implementation
+ * Enhanced with reel detection in Instagram DMs
  * @param {MutationRecord[]} mutations - Array of mutation records
  */
 function handleDOMChanges(mutations) {
@@ -697,7 +1261,118 @@ function handleDOMChanges(mutations) {
     
     if (relevantMutations.length === 0) return;
     
-    // Use throttled detection for performance
+    // Enhanced reel detection for Instagram DMs
+    console.log('[IG Reel Tracker] Scanning for reels...');
+    
+    // Multiple selector strategies for reel message containers
+    const reelSelectors = [
+      // Video elements with Instagram patterns
+      'video[src*="instagram"]',
+      'video[src*="cdninstagram"]',
+      'video[poster*="instagram"]',
+      
+      // Data attribute selectors
+      '[data-testid*="reel"]',
+      '[data-testid*="video"]',
+      '[data-testid*="story"]',
+      
+      // Aria label selectors
+      '[aria-label*="reel" i]',
+      '[aria-label*="video" i]',
+      '[aria-label*="story" i]',
+      
+      // Structural patterns for video containers
+      'div[role="listitem"] video',
+      'div[role="button"] video',
+      '[role="button"][aria-label*="video" i]',
+      
+      // Instagram-specific patterns
+      'div[style*="aspect-ratio"] video',
+      'div[class*="video"] video',
+      'div[class*="reel"]',
+      
+      // Fallback selectors
+      'video[controls]',
+      'video[autoplay]'
+    ];
+    
+    let foundReels = [];
+    let workingSelector = null;
+    
+    // Try each selector strategy with defensive null checks
+    for (const selector of reelSelectors) {
+      try {
+        const elements = document.querySelectorAll(selector);
+        if (elements && elements.length > 0) {
+          foundReels = Array.from(elements);
+          workingSelector = selector;
+          console.log(`[IG Reel Tracker] Found ${foundReels.length} reel containers using selector: ${selector}`);
+          break;
+        }
+      } catch (selectorError) {
+        console.warn(`[IG Reel Tracker] Selector failed: ${selector}`, selectorError);
+        continue;
+      }
+    }
+    
+    if (foundReels.length === 0) {
+      console.log('[IG Reel Tracker] No reel containers found with any strategy');
+    } else {
+      console.log(`[IG Reel Tracker] Found ${foundReels.length} reel containers`);
+      
+      // Process each found reel
+      foundReels.forEach((reelElement, index) => {
+        try {
+          // Extract reel ID from DOM structure
+          const reelId = extractReelIdFromDOMElement(reelElement);
+          
+          if (!reelId) {
+            console.warn(`[IG Reel Tracker] Could not extract reel ID from element ${index + 1}`);
+            return;
+          }
+          
+          // Check if already detected to avoid duplicates
+          if (detectedReelsMap.has(reelId)) {
+            console.log(`[IG Reel Tracker] Reel ${reelId} already detected, skipping`);
+            return;
+          }
+          
+          // Detect emoji reactions for this reel
+          console.log(`[IG Reel Tracker] Detecting reactions for reel ${reelId}...`);
+          const reactionData = detectReelReactions(reelElement);
+          console.log(`[IG Reel Tracker] Reaction detection result for ${reelId}:`, reactionData);
+          
+          // Create enhanced reel data structure with reaction fields
+          const reelData = {
+            reelId: reelId,
+            timestamp: Date.now(),
+            domElement: reelElement,
+            selector: workingSelector,
+            extractionMethod: 'DOM_MUTATION',
+            hasReaction: reactionData.hasReaction,
+            reactionType: reactionData.reactionType
+          };
+          
+          // Store in Map to avoid duplicates
+          detectedReelsMap.set(reelId, reelData);
+          
+          // Enhanced console output with reaction status
+          if (reactionData.hasReaction) {
+            console.log(`[IG Reel Tracker] Reel detected with reaction: {id: "${reelId}", timestamp: ${reelData.timestamp}, reactionType: "${reactionData.reactionType}"}`, reelData);
+          } else {
+            console.log(`[IG Reel Tracker] Reel detected (no reactions): {id: "${reelId}", timestamp: ${reelData.timestamp}}`, reelData);
+          }
+          
+          // Schedule persistence with debouncing
+          persistReelData();
+          
+        } catch (elementError) {
+          console.error(`[IG Reel Tracker] Error processing reel element ${index + 1}:`, elementError);
+        }
+      });
+    }
+    
+    // Use throttled detection for additional processing
     reelDetectionThrottle();
     
   } catch (error) {
