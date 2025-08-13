@@ -1,6 +1,12 @@
 /**
  * IG Reel Tracker - Content Script
  * Handles Instagram DM page detection and reel tracking
+ * 
+ * Phase 2 Implementation Complete:
+ * - Smart reel detection with Instagram-specific selectors
+ * - Optimized mutation observer targeting
+ * - Performance optimizations with throttling and caching
+ * - Enhanced data structure with DOM paths and message IDs
  */
 
 /**
@@ -15,6 +21,36 @@ function isInstagramDMPage() {
 }
 
 /**
+ * Smart reel detection using Instagram-specific selectors
+ * @returns {Array} Array of detected reel elements
+ */
+function detectReelsInConversation() {
+  const reelSelectors = [
+    // Primary selectors (most reliable)
+    '[role="button"][aria-label*="reel" i]',
+    '[aria-label*="video" i][role="button"]',
+    
+    // Fallback selectors
+    'div[role="listitem"] video',
+    '[data-testid*="reel"]',
+    
+    // Structure-based detection
+    'div[role="listitem"] div[style*="aspect-ratio"]'
+  ];
+  
+  // Try multiple selector strategies
+  for (const selector of reelSelectors) {
+    const elements = document.querySelectorAll(selector);
+    if (elements.length > 0) {
+      console.log(`[IG Reel Tracker] Found ${elements.length} reels with selector: ${selector}`);
+      return Array.from(elements);
+    }
+  }
+  
+  return [];
+}
+
+/**
  * Extract reel messages from the current conversation
  * @returns {Array} Array of reel message objects
  */
@@ -24,72 +60,11 @@ function extractReelMessages() {
   const reelMessages = [];
   
   try {
-    // More comprehensive approach to find reel messages
-    console.log('[IG Reel Tracker] Searching for reel messages using multiple strategies...');
-    
-    // Strategy 1: Direct reel links
-    let reelElements = document.querySelectorAll('a[href*="/reel/"]');
-    console.log(`[IG Reel Tracker] Strategy 1 - Direct reel links: Found ${reelElements.length} elements`);
-    
-    if (reelElements.length === 0) {
-      // Strategy 2: Look for reel containers in message areas
-      const messageAreas = document.querySelectorAll('[role="listitem"], .message, [data-testid*="message"], .conversation-item');
-      console.log(`[IG Reel Tracker] Strategy 2 - Message areas: Found ${messageAreas.length} areas`);
-      
-      messageAreas.forEach((area, index) => {
-        // Look for any element that might contain reel content
-        const potentialReels = area.querySelectorAll('a, div, span');
-        potentialReels.forEach(element => {
-          if (element.href && element.href.includes('/reel/')) {
-            reelElements = reelElements.length === 0 ? [element] : [...reelElements, element];
-          }
-        });
-      });
-      
-      console.log(`[IG Reel Tracker] Strategy 2 - Found ${reelElements.length} reel elements in message areas`);
-    }
-    
-    if (reelElements.length === 0) {
-      // Strategy 3: Look for any text content mentioning reels
-      const allTextElements = document.querySelectorAll('*');
-      const reelTextElements = [];
-      
-      allTextElements.forEach(element => {
-        if (element.textContent && 
-            (element.textContent.includes('reel') || 
-             element.textContent.includes('Reel') ||
-             element.textContent.includes('REEL'))) {
-          reelTextElements.push(element);
-        }
-      });
-      
-      console.log(`[IG Reel Tracker] Strategy 3 - Text search: Found ${reelTextElements.length} elements mentioning reels`);
-      
-      // If we found text elements, look for their parent containers that might be messages
-      if (reelTextElements.length > 0) {
-        reelTextElements.forEach(textElement => {
-          const messageContainer = findMessageContainer(textElement);
-          if (messageContainer) {
-            // Create a synthetic reel element
-            const syntheticReel = {
-              href: window.location.href, // Fallback URL
-              synthetic: true,
-              messageContainer: messageContainer
-            };
-            reelElements = reelElements.length === 0 ? [syntheticReel] : [...reelElements, syntheticReel];
-          }
-        });
-      }
-    }
+    // Use the new optimized reel detection function
+    const reelElements = detectReelsInConversation();
     
     if (reelElements.length === 0) {
       console.log('[IG Reel Tracker] No reel elements found with any strategy');
-      console.log('[IG Reel Tracker] DOM structure analysis:');
-      console.log('[IG Reel Tracker] - Document body children:', document.body.children.length);
-      console.log('[IG Reel Tracker] - Elements with role="listitem":', document.querySelectorAll('[role="listitem"]').length);
-      console.log('[IG Reel Tracker] - Elements with data-testid containing "message":', document.querySelectorAll('[data-testid*="message"]').length);
-      console.log('[IG Reel Tracker] - All anchor tags:', document.querySelectorAll('a').length);
-      console.log('[IG Reel Tracker] - All div tags:', document.querySelectorAll('div').length);
       return reelMessages;
     }
     
@@ -114,9 +89,99 @@ function extractReelMessages() {
     
   } catch (error) {
     console.error('[IG Reel Tracker] Error during reel extraction:', error);
-  }
+      }
   
   return reelMessages;
+}
+
+/**
+ * Generate unique ID for reel element
+ * @param {Element} reelElement - The reel DOM element
+ * @returns {string} Unique ID based on content or position
+ */
+function generateUniqueId(reelElement) {
+  try {
+    // Try to generate ID based on content hash
+    const content = reelElement.textContent || reelElement.outerHTML || '';
+    const hash = content.split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0);
+    return `reel_${Math.abs(hash)}_${Date.now()}`;
+  } catch (error) {
+    // Fallback to timestamp-based ID
+    return `reel_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+}
+
+/**
+ * Generate DOM path for navigation
+ * @param {Element} reelElement - The reel DOM element
+ * @returns {string} DOM path string
+ */
+function generateDOMPath(reelElement) {
+  try {
+    const path = [];
+    let current = reelElement;
+    
+    while (current && current !== document.body) {
+      let selector = current.tagName.toLowerCase();
+      if (current.id) {
+        selector += `#${current.id}`;
+      } else if (current.className) {
+        selector += `.${current.className.split(' ').join('.')}`;
+      }
+      path.unshift(selector);
+      current = current.parentElement;
+    }
+    
+    return path.join(' > ');
+  } catch (error) {
+    return 'unknown_path';
+  }
+}
+
+/**
+ * Extract message ID from reel element
+ * @param {Element} reelElement - The reel DOM element
+ * @returns {string|null} Message ID or null if not found
+ */
+function extractMessageId(reelElement) {
+  try {
+    const messageContainer = findMessageContainer(reelElement);
+    if (!messageContainer) return null;
+    
+    // Try to find message ID from various attributes
+    const messageId = messageContainer.getAttribute('data-message-id') ||
+                     messageContainer.getAttribute('data-testid') ||
+                     messageContainer.id ||
+                     `msg_${Date.now()}`;
+    
+    return messageId;
+  } catch (error) {
+    return `msg_${Date.now()}`;
+  }
+}
+
+/**
+ * Get current conversation ID
+ * @returns {string} Current conversation ID
+ */
+function getCurrentConversationId() {
+  try {
+    // Extract from URL or generate from current page
+    const url = window.location.href;
+    const conversationMatch = url.match(/\/direct\/t\/([^\/\?]+)/);
+    
+    if (conversationMatch) {
+      return conversationMatch[1];
+    }
+    
+    // Fallback to URL hash or current timestamp
+    return url.split('/').pop() || `conv_${Date.now()}`;
+  } catch (error) {
+    return `conv_${Date.now()}`;
+  }
 }
 
 /**
@@ -169,11 +234,15 @@ function extractReelData(reelElement) {
     const hasReaction = detectEmojiReactions(messageContainer);
     console.log('[IG Reel Tracker] Has emoji reactions:', hasReaction);
     
+    // Enhanced reel data model as specified in the prompt
     const reelData = {
-      reelId,
-      timestamp,
-      hasReaction,
-      reelUrl
+      id: generateUniqueId(reelElement), // Based on content or position
+      timestamp: timestamp,
+      hasReaction: hasReaction,
+      reelUrl: reelUrl, // If available
+      domPath: generateDOMPath(reelElement), // For navigation
+      messageId: extractMessageId(reelElement),
+      conversationId: getCurrentConversationId()
     };
     
     console.log('[IG Reel Tracker] Final reel data:', reelData);
@@ -355,44 +424,21 @@ function detectEmojiReactions(messageContainer) {
   try {
     console.log('[IG Reel Tracker] Checking for emoji reactions in message container');
     
-    // Multiple selectors for reaction containers
+    // Instagram reaction patterns
     const reactionSelectors = [
+      '.reaction-indicator',
       '[data-testid*="reaction"]',
-      '.reaction-container',
-      '.reactions',
-      '.message-reactions',
-      '[aria-label*="reaction"]',
-      '.emoji-reaction',
-      'div[role="button"][aria-label*="reaction"]'
+      'span[role="img"]', // Emoji reactions
+      '.emoji-reaction'
     ];
     
-    for (const selector of reactionSelectors) {
-      const reactionElement = messageContainer.querySelector(selector);
-      if (reactionElement) {
-        console.log('[IG Reel Tracker] Found reaction element with selector:', selector);
-        
-        // Check if there are actual reaction items
-        const reactionItems = reactionElement.querySelectorAll('img, span, div');
-        if (reactionItems.length > 0) {
-          console.log('[IG Reel Tracker] Found reaction items:', reactionItems.length);
-          return true;
-        }
-      }
-    }
+    // Check within reel container and nearby elements
+    const container = messageContainer.closest('[role="listitem"]');
+    if (!container) return false;
     
-    // Also check for reaction indicators in the message itself
-    const hasReactionIndicator = messageContainer.textContent?.includes('❤️') || 
-                                messageContainer.textContent?.includes('👍') ||
-                                messageContainer.textContent?.includes('😍') ||
-                                messageContainer.textContent?.includes('🔥');
-    
-    if (hasReactionIndicator) {
-      console.log('[IG Reel Tracker] Found reaction indicators in message text');
-      return true;
-    }
-    
-    console.log('[IG Reel Tracker] No emoji reactions detected');
-    return false;
+    return reactionSelectors.some(selector => 
+      container.querySelector(selector) !== null
+    );
     
   } catch (error) {
     console.error('[IG Reel Tracker] Error detecting emoji reactions:', error);
@@ -465,6 +511,29 @@ function detectAndLogReels() {
 let isInitialized = false;
 let mutationObserver = null;
 
+// Cached results to prevent reprocessing
+const processedReels = new Set();
+
+/**
+ * Throttle function for performance optimization
+ * @param {Function} func - Function to throttle
+ * @param {number} delay - Delay in milliseconds
+ * @returns {Function} Throttled function
+ */
+function throttle(func, delay) {
+  let lastCall = 0;
+  return function(...args) {
+    const now = Date.now();
+    if (now - lastCall >= delay) {
+      lastCall = now;
+      return func.apply(this, args);
+    }
+  };
+}
+
+// Throttled detection for performance
+const reelDetectionThrottle = throttle(scanForNewReels, 1000);
+
 /**
  * Initialize content script
  * Sets up observers and communicates with service worker
@@ -517,7 +586,7 @@ async function initializeContentScript() {
 
 /**
  * Set up DOM mutation observer for Instagram content changes
- * Prepared for Phase 2 implementation
+ * Optimized for Phase 2 implementation
  */
 function setupMutationObserver() {
   try {
@@ -542,15 +611,23 @@ function setupMutationObserver() {
       handleDOMChanges(mutations);
     });
     
-    // Start observing Instagram content container
-    const targetNode = document.body;
-    if (targetNode) {
-      observer.observe(targetNode, observerConfig);
+    // Smart observer targeting - only observe the messages container, not entire body
+    const messagesContainer = document.querySelector('[role="main"]') || 
+                             document.querySelector('[data-testid="conversation-list"]') ||
+                             document.querySelector('.conversation-container');
+    
+    if (messagesContainer) {
+      observer.observe(messagesContainer, observerConfig);
       mutationObserver = observer;
-      console.log('[IG Reel Tracker] Mutation observer started successfully');
+      console.log('[IG Reel Tracker] Observing messages container only');
     } else {
-      console.warn('[IG Reel Tracker] Could not find target node for observer');
+      // Fallback to body but with filtering
+      observer.observe(document.body, observerConfig);
+      mutationObserver = observer;
+      console.log('[IG Reel Tracker] Fallback: observing body with filtering');
     }
+    
+    console.log('[IG Reel Tracker] Mutation observer started successfully');
     
   } catch (error) {
     console.error('[IG Reel Tracker] Error setting up mutation observer:', error);
@@ -558,32 +635,70 @@ function setupMutationObserver() {
 }
 
 /**
+ * Scan for new reels and process them
+ * Prevents reprocessing of already detected reels
+ */
+function scanForNewReels() {
+  try {
+    console.log('[IG Reel Tracker] Scanning for new reels...');
+    
+    const newReels = detectReelsInConversation();
+    const newReelData = [];
+    
+    newReels.forEach(reelElement => {
+      const reelId = extractReelIdFromUrl(reelElement.href) || generateUniqueId(reelElement);
+      
+      if (!processedReels.has(reelId)) {
+        processedReels.add(reelId);
+        const reelData = extractReelData(reelElement);
+        if (reelData) {
+          newReelData.push(reelData);
+        }
+      }
+    });
+    
+    if (newReelData.length > 0) {
+      console.log(`[IG Reel Tracker] Found ${newReelData.length} new reels`);
+      // Store new reels in extension storage
+      chrome.storage.local.get(['detectedReels'], (result) => {
+        const existingReels = result.detectedReels || [];
+        const updatedReels = [...existingReels, ...newReelData];
+        chrome.storage.local.set({ 
+          detectedReels: updatedReels,
+          lastDetectionTime: Date.now()
+        });
+      });
+    }
+    
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error scanning for new reels:', error);
+  }
+}
+
+/**
  * Handle DOM changes detected by mutation observer
- * Triggers reel detection when conversation content changes
+ * Optimized for Phase 2 implementation
  * @param {MutationRecord[]} mutations - Array of mutation records
  */
 function handleDOMChanges(mutations) {
   try {
     console.log('[IG Reel Tracker] DOM changes detected:', mutations.length, 'mutations');
     
-    // Check if any mutations involve reel-related content
-    const hasReelChanges = mutations.some(mutation => {
-      return mutation.addedNodes.length > 0 || 
-             (mutation.target && (
-               mutation.target.href?.includes('/reel/') ||
-               mutation.target.textContent?.includes('reel') ||
-               mutation.target.querySelector?.('a[href*="/reel/"]')
-             ));
+    // Filter only relevant mutations
+    const relevantMutations = mutations.filter(mutation => {
+      if (mutation.type !== 'childList') return false;
+      
+      // Only process mutations in message containers
+      const target = mutation.target;
+      return target.matches('[role="main"]') || 
+             target.closest('[role="main"]') ||
+             target.matches('[role="listitem"]');
     });
     
-    if (hasReelChanges) {
-      console.log('[IG Reel Tracker] Reel-related changes detected, triggering reel detection...');
-      // Debounce reel detection to avoid excessive processing
-      clearTimeout(window.reelDetectionTimeout);
-      window.reelDetectionTimeout = setTimeout(() => {
-        detectAndLogReels();
-      }, 1000);
-    }
+    if (relevantMutations.length === 0) return;
+    
+    // Use throttled detection for performance
+    reelDetectionThrottle();
     
   } catch (error) {
     console.error('[IG Reel Tracker] Error handling DOM changes:', error);
