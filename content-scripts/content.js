@@ -21,33 +21,159 @@ function isInstagramDMPage() {
 }
 
 /**
- * Smart reel detection using Instagram-specific selectors
- * @returns {Array} Array of detected reel elements
+ * Find the messages container where DM messages appear
+ * @returns {Element|null} The messages container or null if not found
  */
-function detectReelsInConversation() {
-  const reelSelectors = [
-    // Primary selectors (most reliable)
-    '[role="button"][aria-label*="reel" i]',
-    '[aria-label*="video" i][role="button"]',
+function findMessagesContainer() {
+  console.log('[IG Reel Tracker] Finding messages container...');
+  
+  const containerSelectors = [
+    // Instagram's primary message container patterns
+    'div[role="grid"]', // Most common for message lists
+    'section div[role="grid"]',
+    '[data-testid="conversation-viewer"]',
+    '[role="main"] div[role="grid"]',
+    
+    // Scrollable message containers
+    'div[style*="overflow"] div[role="row"]:first-child',
+    'div[style*="scroll"] div[role="row"]:first-child',
     
     // Fallback selectors
-    'div[role="listitem"] video',
-    '[data-testid*="reel"]',
-    
-    // Structure-based detection
-    'div[role="listitem"] div[style*="aspect-ratio"]'
+    'div[role="row"]:first-child',
+    '.conversation-viewer',
+    '[class*="message"][class*="container"]'
   ];
   
-  // Try multiple selector strategies
-  for (const selector of reelSelectors) {
-    const elements = document.querySelectorAll(selector);
-    if (elements.length > 0) {
-      console.log(`[IG Reel Tracker] Found ${elements.length} reels with selector: ${selector}`);
-      return Array.from(elements);
+  for (const selector of containerSelectors) {
+    try {
+      const container = document.querySelector(selector);
+      if (container) {
+        // Verify it contains actual messages by checking for multiple rows
+        const messageRows = container.querySelectorAll('[role="row"], div[style*="flex"]');
+        if (messageRows.length >= 1) {
+          console.log(`[IG Reel Tracker] Found messages container using selector: ${selector}`);
+          console.log(`[IG Reel Tracker] Container contains ${messageRows.length} potential message elements`);
+          return container.closest('div[role="grid"]') || container;
+        }
+      }
+    } catch (error) {
+      console.warn(`[IG Reel Tracker] Selector failed: ${selector}`, error);
+      continue;
     }
   }
   
-  return [];
+  console.warn('[IG Reel Tracker] Could not find messages container');
+  return null;
+}
+
+/**
+ * Smart reel detection using Instagram-specific selectors within messages container
+ * @returns {Array} Array of detected reel elements
+ */
+function detectReelsInConversation() {
+  console.log('[IG Reel Tracker] Scanning for reels within messages container...');
+  
+  // First find the messages container
+  const messagesContainer = findMessagesContainer();
+  if (!messagesContainer) {
+    console.log('[IG Reel Tracker] No messages container found, cannot detect reels');
+    return [];
+  }
+  
+  // Updated selectors that target actual reel messages, not UI elements
+  const reelSelectors = [
+    // Links to reels within messages
+    'a[href*="/reel/"]',
+    'a[href*="/reels/"]', 
+    'a[href*="instagram.com/reel"]',
+    
+    // Video elements within message bubbles
+    'div[role="row"] video',
+    'div[role="button"]:has(video)',
+    '[role="button"] video',
+    
+    // Message containers with video content
+    'div[style*="aspect-ratio"] video',
+    'div[class*="video"] a[href*="reel"]',
+    
+    // Instagram-specific video patterns within messages
+    'video[src*="instagram"]',
+    'video[src*="cdninstagram"]',
+    'img[src*="reel"]'
+  ];
+  
+  let foundReels = [];
+  let workingSelector = null;
+  
+  // Try each selector strategy within the messages container only
+  for (const selector of reelSelectors) {
+    try {
+      const elements = messagesContainer.querySelectorAll(selector);
+      if (elements && elements.length > 0) {
+        // Filter out elements that are in navigation/header/sidebar
+        const validElements = Array.from(elements).filter(element => {
+          return !element.closest('nav, header, aside, [role="navigation"]');
+        });
+        
+        if (validElements.length > 0) {
+          foundReels = validElements;
+          workingSelector = selector;
+          console.log(`[IG Reel Tracker] Found ${foundReels.length} potential reels using selector: ${selector}`);
+          break;
+        }
+      }
+    } catch (selectorError) {
+      console.warn(`[IG Reel Tracker] Selector failed: ${selector}`, selectorError);
+      continue;
+    }
+  }
+  
+  if (foundReels.length === 0) {
+    console.log('[IG Reel Tracker] No reel elements found with any strategy');
+  }
+  
+  return foundReels;
+}
+
+/**
+ * Validate element before processing as reel
+ * @param {Element} element - Element to validate
+ * @returns {boolean} True if element is valid for processing
+ */
+function validateReelElement(element) {
+  try {
+    if (!element || !element.getBoundingClientRect) {
+      console.log('[IG Reel Tracker] Element validation failed: invalid element');
+      return false;
+    }
+    
+    // Check if element is visible and reasonably sized
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 50 || rect.height < 50) {
+      console.log('[IG Reel Tracker] Element validation failed: too small', rect.width, 'x', rect.height);
+      return false;
+    }
+    
+    // Verify it's not in navigation/header/sidebar
+    if (element.closest('nav, header, aside, [role="navigation"], [role="banner"]')) {
+      console.log('[IG Reel Tracker] Element validation failed: in navigation/header area');
+      return false;
+    }
+    
+    // Verify it's within the messages container
+    const messagesContainer = findMessagesContainer();
+    if (messagesContainer && !messagesContainer.contains(element)) {
+      console.log('[IG Reel Tracker] Element validation failed: not within messages container');
+      return false;
+    }
+    
+    console.log('[IG Reel Tracker] Element validation passed');
+    return true;
+    
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error validating reel element:', error);
+    return false;
+  }
 }
 
 /**
@@ -58,6 +184,7 @@ function extractReelMessages() {
   console.log('[IG Reel Tracker] Starting reel message extraction...');
   
   const reelMessages = [];
+  const processedElements = new Set(); // Track processed elements to avoid duplicates
   
   try {
     // Use the new optimized reel detection function
@@ -70,26 +197,40 @@ function extractReelMessages() {
     
     console.log(`[IG Reel Tracker] Total reel elements found: ${reelElements.length}`);
     
-    // Process each reel element
+    // Process each reel element with validation
     reelElements.forEach((reelElement, index) => {
       try {
-        console.log(`[IG Reel Tracker] Processing reel element ${index + 1}/${reelElements.length}:`, reelElement);
+        console.log(`[IG Reel Tracker] Processing reel element ${index + 1}/${reelElements.length}:`, reelElement.tagName);
+        
+        // Validate element before processing
+        if (!validateReelElement(reelElement)) {
+          console.log(`[IG Reel Tracker] Skipping invalid reel element ${index + 1}`);
+          return;
+        }
+        
+        // Check for duplicates
+        const elementKey = reelElement.outerHTML || reelElement.href || `element_${index}`;
+        if (processedElements.has(elementKey)) {
+          console.log(`[IG Reel Tracker] Skipping duplicate reel element ${index + 1}`);
+          return;
+        }
+        processedElements.add(elementKey);
         
         const reelData = extractReelData(reelElement);
         if (reelData) {
           reelMessages.push(reelData);
-          console.log(`[IG Reel Tracker] Successfully extracted reel:`, reelData);
+          console.log(`[IG Reel Tracker] Successfully extracted reel: {id: "${reelData.id}", hasReaction: ${reelData.hasReaction}}`);
         }
       } catch (error) {
         console.error(`[IG Reel Tracker] Error processing reel element ${index + 1}:`, error);
       }
     });
     
-    console.log(`[IG Reel Tracker] Reel extraction complete. Found ${reelMessages.length} reel messages`);
+    console.log(`[IG Reel Tracker] Reel extraction complete. Found ${reelMessages.length} valid reel messages`);
     
   } catch (error) {
     console.error('[IG Reel Tracker] Error during reel extraction:', error);
-      }
+  }
   
   return reelMessages;
 }
@@ -186,41 +327,34 @@ function getCurrentConversationId() {
 
 /**
  * Extract data from a single reel element
- * @param {Element|Object} reelElement - The reel DOM element or synthetic reel object
+ * @param {Element} reelElement - The reel DOM element
  * @returns {Object|null} Reel data object or null if extraction fails
  */
 function extractReelData(reelElement) {
   try {
-    console.log('[IG Reel Tracker] Extracting data from reel element:', reelElement);
+    console.log('[IG Reel Tracker] Extracting data from reel element:', reelElement.tagName);
     
-    let reelUrl, reelId, messageContainer;
-    
-    // Handle synthetic reel elements (from text search)
-    if (reelElement.synthetic) {
-      console.log('[IG Reel Tracker] Processing synthetic reel element');
-      reelUrl = reelElement.href || window.location.href;
-      reelId = 'synthetic_' + Date.now(); // Generate unique ID
-      messageContainer = reelElement.messageContainer;
-    } else {
-      // Handle regular reel elements
-      reelUrl = reelElement.href;
-      if (!reelUrl) {
-        console.warn('[IG Reel Tracker] No href found on reel element');
-        return null;
-      }
-      
-      reelId = extractReelIdFromUrl(reelUrl);
-      if (!reelId) {
-        console.warn('[IG Reel Tracker] Could not extract reel ID from URL:', reelUrl);
-        return null;
-      }
-      
-      console.log('[IG Reel Tracker] Extracted reel ID:', reelId);
-      
-      // Find the message container (parent element that contains the reel)
-      messageContainer = findMessageContainer(reelElement);
+    // Extract reel ID using the improved function
+    const reelId = extractReelId(reelElement);
+    if (!reelId) {
+      console.warn('[IG Reel Tracker] Could not extract reel ID from element');
+      return null;
     }
     
+    console.log('[IG Reel Tracker] Extracted reel ID:', reelId);
+    
+    // Get reel URL if available
+    let reelUrl = reelElement.href || reelElement.getAttribute('href');
+    if (!reelUrl) {
+      // Try to get from video element
+      const videoElement = reelElement.tagName === 'VIDEO' ? reelElement : reelElement.querySelector('video');
+      if (videoElement) {
+        reelUrl = videoElement.src || videoElement.getAttribute('src');
+      }
+    }
+    
+    // Find the message container (parent element that contains the reel)
+    const messageContainer = findMessageContainer(reelElement);
     if (!messageContainer) {
       console.warn('[IG Reel Tracker] Could not find message container for reel');
       return null;
@@ -234,12 +368,12 @@ function extractReelData(reelElement) {
     const hasReaction = detectEmojiReactions(messageContainer);
     console.log('[IG Reel Tracker] Has emoji reactions:', hasReaction);
     
-    // Enhanced reel data model as specified in the prompt
+    // Enhanced reel data model with proper ID
     const reelData = {
-      id: generateUniqueId(reelElement), // Based on content or position
+      id: reelId, // Use the extracted/generated reel ID
       timestamp: timestamp,
       hasReaction: hasReaction,
-      reelUrl: reelUrl, // If available
+      reelUrl: reelUrl || null, // URL if available
       domPath: generateDOMPath(reelElement), // For navigation
       messageId: extractMessageId(reelElement),
       conversationId: getCurrentConversationId()
@@ -255,6 +389,86 @@ function extractReelData(reelElement) {
 }
 
 /**
+ * Extract reel ID from element or URL with multiple strategies
+ * @param {Element|string} elementOrUrl - The reel element or URL
+ * @returns {string|null} The reel ID or null if not found
+ */
+function extractReelId(elementOrUrl) {
+  try {
+    let reelId = null;
+    
+    // Handle element input
+    if (typeof elementOrUrl === 'object' && elementOrUrl.nodeType === Node.ELEMENT_NODE) {
+      const element = elementOrUrl;
+      console.log('[IG Reel Tracker] Extracting reel ID from element:', element.tagName);
+      
+      // Strategy 1: Extract from href attributes
+      const href = element.href || element.getAttribute('href');
+      if (href) {
+        reelId = extractReelIdFromUrl(href);
+        if (reelId) {
+          console.log('[IG Reel Tracker] Extracted reel ID from href:', reelId);
+          return reelId;
+        }
+      }
+      
+      // Strategy 2: Extract from video source URLs
+      const videoElement = element.tagName === 'VIDEO' ? element : element.querySelector('video');
+      if (videoElement) {
+        const src = videoElement.src || videoElement.getAttribute('src');
+        if (src) {
+          reelId = extractReelIdFromUrl(src);
+          if (reelId) {
+            console.log('[IG Reel Tracker] Extracted reel ID from video src:', reelId);
+            return reelId;
+          }
+        }
+      }
+      
+      // Strategy 3: Extract from thumbnail image URLs
+      const imgElement = element.tagName === 'IMG' ? element : element.querySelector('img');
+      if (imgElement) {
+        const src = imgElement.src || imgElement.getAttribute('src');
+        if (src) {
+          reelId = extractReelIdFromUrl(src);
+          if (reelId) {
+            console.log('[IG Reel Tracker] Extracted reel ID from image src:', reelId);
+            return reelId;
+          }
+        }
+      }
+      
+      // Strategy 4: Generate based on message position + timestamp (avoid same fallback pattern)
+      const messageContainer = findMessageContainer(element);
+      if (messageContainer) {
+        const messageIndex = Array.from(messageContainer.parentElement.children).indexOf(messageContainer);
+        const timestamp = Date.now().toString().slice(-8); // Last 8 digits
+        reelId = `msg_${messageIndex}_${timestamp}`;
+        console.log('[IG Reel Tracker] Generated contextual reel ID:', reelId);
+        return reelId;
+      }
+      
+      // Last resort: Generate completely unique ID
+      reelId = `unknown_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      console.log('[IG Reel Tracker] Generated fallback reel ID:', reelId);
+      return reelId;
+    }
+    
+    // Handle URL string input
+    if (typeof elementOrUrl === 'string') {
+      return extractReelIdFromUrl(elementOrUrl);
+    }
+    
+    console.warn('[IG Reel Tracker] Invalid input for reel ID extraction:', elementOrUrl);
+    return null;
+    
+  } catch (error) {
+    console.error('[IG Reel Tracker] Error extracting reel ID:', error);
+    return `error_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  }
+}
+
+/**
  * Extract reel ID from Instagram reel URL
  * @param {string} url - The reel URL
  * @returns {string|null} The reel ID or null if not found
@@ -263,16 +477,23 @@ function extractReelIdFromUrl(url) {
   try {
     console.log('[IG Reel Tracker] Extracting reel ID from URL:', url);
     
+    if (!url || typeof url !== 'string') {
+      console.warn('[IG Reel Tracker] Invalid URL provided:', url);
+      return null;
+    }
+    
     // Handle different URL formats
     const urlPatterns = [
-      /\/reel\/([^\/\?]+)/,  // /reel/ABC123/
-      /\/reel\/([^\/\?]+)\?/, // /reel/ABC123?param=value
-      /\/reel\/([^\/\?]+)$/   // /reel/ABC123 (end of URL)
+      /\/reel\/([A-Za-z0-9_-]+)/,  // /reel/ABC123_xyz/
+      /\/reels\/([A-Za-z0-9_-]+)/, // /reels/ABC123_xyz/
+      /reel=([A-Za-z0-9_-]+)/,     // URL parameter format
+      /video_id=([A-Za-z0-9_-]+)/,  // Video ID parameter
+      /media_id=([A-Za-z0-9_-]+)/   // Media ID parameter
     ];
     
     for (const pattern of urlPatterns) {
       const match = url.match(pattern);
-      if (match && match[1]) {
+      if (match && match[1] && match[1].length > 3) { // Ensure ID is meaningful length
         const reelId = match[1];
         console.log('[IG Reel Tracker] Successfully extracted reel ID:', reelId);
         return reelId;
@@ -289,64 +510,103 @@ function extractReelIdFromUrl(url) {
 }
 
 /**
- * Find the message container that contains the reel
+ * Find the message container that contains the reel (walks UP the DOM tree)
  * @param {Element} reelElement - The reel element
  * @returns {Element|null} The message container or null if not found
  */
 function findMessageContainer(reelElement) {
   try {
-    console.log('[IG Reel Tracker] Finding message container for reel element');
+    console.log('[IG Reel Tracker] Finding message container for reel element, walking up DOM tree');
     
-    // Look for common message container selectors
+    if (!reelElement || !reelElement.parentElement) {
+      console.warn('[IG Reel Tracker] Invalid reel element provided');
+      return null;
+    }
+    
+    // Instagram message container patterns (walking up from reel element)
     const containerSelectors = [
+      // Instagram's primary message patterns
+      '[role="row"]',              // Individual message rows
+      '[role="button"]',           // Clickable message bubbles
+      'div[style*="padding"][style*="margin"]', // Styled message containers
+      
+      // Common message container patterns
       '[role="listitem"]',
-      '.message-container',
-      '.message',
       '[data-testid*="message"]',
+      '[class*="message"]',
       '.conversation-item',
-      '[data-testid*="conversation"]',
-      '.conversation',
-      '.chat-item',
-      '.dm-item'
+      '.chat-item'
     ];
     
     let currentElement = reelElement;
     let depth = 0;
-    const maxDepth = 10; // Prevent infinite loops
+    const maxDepth = 8; // Reasonable depth for message structure
     
-    // Traverse up the DOM tree to find the message container
+    // Walk UP the DOM tree to find the message bubble/container
     while (currentElement && currentElement !== document.body && depth < maxDepth) {
-      console.log(`[IG Reel Tracker] Checking element at depth ${depth}:`, currentElement.tagName, currentElement.className);
+      const elementInfo = `${currentElement.tagName}${currentElement.className ? '.' + currentElement.className.split(' ')[0] : ''}`;
+      console.log(`[IG Reel Tracker] Checking element at depth ${depth}: ${elementInfo}`);
       
-      // Check if current element matches any container selector
-      for (const selector of containerSelectors) {
-        if (currentElement.matches(selector)) {
-          console.log('[IG Reel Tracker] Found message container with selector:', selector);
-          return currentElement;
+      // Skip the reel element itself on first iteration
+      if (depth > 0) {
+        // Check if current element matches any container selector
+        for (const selector of containerSelectors) {
+          try {
+            if (currentElement.matches(selector)) {
+              // Verify this is actually a message container by checking its size
+              const rect = currentElement.getBoundingClientRect();
+              if (rect.width > 50 && rect.height > 20) {
+                console.log('[IG Reel Tracker] Found message container with selector:', selector);
+                console.log('[IG Reel Tracker] Container dimensions:', rect.width, 'x', rect.height);
+                return currentElement;
+              }
+            }
+          } catch (selectorError) {
+            continue; // Skip invalid selectors
+          }
         }
-      }
-      
-      // Check if current element has message-like attributes
-      if (currentElement.hasAttribute('data-testid') || 
-          currentElement.hasAttribute('role') ||
-          currentElement.className.includes('message') ||
-          currentElement.className.includes('conversation') ||
-          currentElement.className.includes('chat')) {
-        console.log('[IG Reel Tracker] Found potential message container by attributes:', currentElement);
-        return currentElement;
+        
+        // Check for Instagram-specific message container characteristics
+        const hasMessageRole = currentElement.getAttribute('role') === 'row' || 
+                              currentElement.getAttribute('role') === 'button';
+        const hasMessageStyle = currentElement.style.padding || 
+                               currentElement.style.margin ||
+                               currentElement.style.backgroundColor;
+        const hasMessageClass = currentElement.className && 
+                               (currentElement.className.includes('message') ||
+                                currentElement.className.includes('bubble') ||
+                                currentElement.className.includes('chat'));
+        
+        if (hasMessageRole || hasMessageStyle || hasMessageClass) {
+          const rect = currentElement.getBoundingClientRect();
+          if (rect.width > 50 && rect.height > 20) {
+            console.log('[IG Reel Tracker] Found message container by characteristics:', elementInfo);
+            return currentElement;
+          }
+        }
       }
       
       currentElement = currentElement.parentElement;
       depth++;
     }
     
-    // If we couldn't find a specific container, try to find the closest div that might be a message
-    if (reelElement.parentElement && reelElement.parentElement.tagName === 'DIV') {
-      console.log('[IG Reel Tracker] Using parent div as fallback message container');
-      return reelElement.parentElement;
+    // Fallback: use the closest parent that seems like a reasonable message container
+    if (reelElement.parentElement) {
+      let fallbackElement = reelElement.parentElement;
+      let fallbackDepth = 0;
+      
+      while (fallbackElement && fallbackElement !== document.body && fallbackDepth < 3) {
+        const rect = fallbackElement.getBoundingClientRect();
+        if (rect.width > 100 && rect.height > 40) { // Reasonable message size
+          console.log('[IG Reel Tracker] Using fallback message container at depth:', fallbackDepth);
+          return fallbackElement;
+        }
+        fallbackElement = fallbackElement.parentElement;
+        fallbackDepth++;
+      }
     }
     
-    console.warn('[IG Reel Tracker] Could not find message container');
+    console.warn('[IG Reel Tracker] Could not find suitable message container');
     return null;
     
   } catch (error) {
@@ -416,29 +676,102 @@ function extractTimestamp(messageContainer) {
 }
 
 /**
- * Detect if message has emoji reactions
+ * Detect if message has emoji reactions (improved for message bubbles)
  * @param {Element} messageContainer - The message container element
  * @returns {boolean} True if emoji reactions are present
  */
 function detectEmojiReactions(messageContainer) {
   try {
-    console.log('[IG Reel Tracker] Checking for emoji reactions in message container');
+    console.log('[IG Reel Tracker] Checking for emoji reactions in message bubble and surrounding areas');
     
-    // Instagram reaction patterns
+    if (!messageContainer) {
+      console.warn('[IG Reel Tracker] No message container provided for reaction detection');
+      return false;
+    }
+    
+    // Multiple search areas (message bubble + siblings)
+    const searchAreas = [
+      messageContainer,                    // The message itself
+      messageContainer.parentElement,      // Parent container
+      messageContainer.nextElementSibling, // Next sibling (reactions often appear after)
+      messageContainer.previousElementSibling // Previous sibling
+    ].filter(Boolean); // Remove null elements
+    
+    // Instagram reaction patterns for DM messages
     const reactionSelectors = [
-      '.reaction-indicator',
+      // Heart icons (both SVG and emoji)
+      'svg[aria-label*="heart" i]',
+      'svg[aria-label*="like" i]',
+      '[data-testid*="heart"]',
+      
+      // Emoji reactions
+      'span[role="img"]',
+      '[class*="emoji"]',
+      '[class*="reaction"]',
+      
+      // Text indicators
+      '[aria-label*="liked" i]',
+      '[title*="liked" i]',
+      
+      // Reaction containers
       '[data-testid*="reaction"]',
-      'span[role="img"]', // Emoji reactions
-      '.emoji-reaction'
+      '.reaction-button',
+      '.message-reaction'
     ];
     
-    // Check within reel container and nearby elements
-    const container = messageContainer.closest('[role="listitem"]');
-    if (!container) return false;
+    // Common emoji patterns in text content
+    const emojiPatterns = [
+      /❤️|♥️|💖|💕|💗/, // Hearts
+      /👍|👏|🙌/,        // Likes
+      /😂|🤣|😆/,        // Laughs
+      /🔥|💯|✨/         // Fire/100/sparkle
+    ];
     
-    return reactionSelectors.some(selector => 
-      container.querySelector(selector) !== null
-    );
+    // Search each area for reactions
+    for (const area of searchAreas) {
+      try {
+        // Check for reaction elements
+        for (const selector of reactionSelectors) {
+          const reactionElements = area.querySelectorAll(selector);
+          if (reactionElements.length > 0) {
+            console.log(`[IG Reel Tracker] Found reaction elements with selector: ${selector}`);
+            return true;
+          }
+        }
+        
+        // Check for emoji patterns in text content
+        const textContent = area.textContent || '';
+        for (const pattern of emojiPatterns) {
+          if (pattern.test(textContent)) {
+            console.log('[IG Reel Tracker] Found emoji reaction in text content');
+            return true;
+          }
+        }
+        
+        // Check for small overlaid elements on message bubbles (reaction indicators)
+        const smallElements = area.querySelectorAll('div, span');
+        for (const element of smallElements) {
+          const rect = element.getBoundingClientRect();
+          if (rect.width > 10 && rect.width < 40 && rect.height > 10 && rect.height < 40) {
+            const hasReactionContent = element.textContent && 
+                                      (element.textContent.includes('❤') ||
+                                       element.textContent.includes('👍') ||
+                                       element.textContent.includes('Liked'));
+            if (hasReactionContent) {
+              console.log('[IG Reel Tracker] Found small reaction indicator element');
+              return true;
+            }
+          }
+        }
+        
+      } catch (areaError) {
+        console.warn('[IG Reel Tracker] Error checking area for reactions:', areaError);
+        continue;
+      }
+    }
+    
+    console.log('[IG Reel Tracker] No reactions detected in any search area');
+    return false;
     
   } catch (error) {
     console.error('[IG Reel Tracker] Error detecting emoji reactions:', error);
@@ -657,9 +990,14 @@ function scanForNewReels() {
     const newReelData = [];
     
     newReels.forEach(reelElement => {
-      const reelId = extractReelIdFromUrl(reelElement.href) || generateUniqueId(reelElement);
+      // Validate element first
+      if (!validateReelElement(reelElement)) {
+        return;
+      }
       
-      if (!processedReels.has(reelId)) {
+      const reelId = extractReelId(reelElement);
+      
+      if (reelId && !processedReels.has(reelId)) {
         processedReels.add(reelId);
         const reelData = extractReelData(reelElement);
         if (reelData) {
@@ -679,6 +1017,8 @@ function scanForNewReels() {
           lastDetectionTime: Date.now()
         });
       });
+    } else {
+      console.log('[IG Reel Tracker] No new reels found during scan');
     }
     
   } catch (error) {
@@ -1320,11 +1660,19 @@ function handleDOMChanges(mutations) {
     } else {
       console.log(`[IG Reel Tracker] Found ${foundReels.length} reel containers`);
       
-      // Process each found reel
+      // Process each found reel with validation
       foundReels.forEach((reelElement, index) => {
         try {
-          // Extract reel ID from DOM structure
-          const reelId = extractReelIdFromDOMElement(reelElement);
+          console.log(`[IG Reel Tracker] Processing reel element ${index + 1}/${foundReels.length}`);
+          
+          // Validate element before processing
+          if (!validateReelElement(reelElement)) {
+            console.log(`[IG Reel Tracker] Skipping invalid reel element ${index + 1}`);
+            return;
+          }
+          
+          // Extract reel ID using improved function
+          const reelId = extractReelId(reelElement);
           
           if (!reelId) {
             console.warn(`[IG Reel Tracker] Could not extract reel ID from element ${index + 1}`);
@@ -1337,30 +1685,41 @@ function handleDOMChanges(mutations) {
             return;
           }
           
+          // Find message container for reaction detection
+          const messageContainer = findMessageContainer(reelElement);
+          if (!messageContainer) {
+            console.warn(`[IG Reel Tracker] No message container found for reel ${reelId}`);
+            return;
+          }
+          
           // Detect emoji reactions for this reel
           console.log(`[IG Reel Tracker] Detecting reactions for reel ${reelId}...`);
-          const reactionData = detectReelReactions(reelElement);
-          console.log(`[IG Reel Tracker] Reaction detection result for ${reelId}:`, reactionData);
+          const hasReaction = detectEmojiReactions(messageContainer);
+          console.log(`[IG Reel Tracker] Reaction detection result for ${reelId}: ${hasReaction}`);
           
-          // Create enhanced reel data structure with reaction fields
+          // Get reel URL if available
+          const reelUrl = reelElement.href || reelElement.getAttribute('href') || null;
+          
+          // Create enhanced reel data structure
           const reelData = {
             reelId: reelId,
             timestamp: Date.now(),
             domElement: reelElement,
             selector: workingSelector,
             extractionMethod: 'DOM_MUTATION',
-            hasReaction: reactionData.hasReaction,
-            reactionType: reactionData.reactionType
+            hasReaction: hasReaction,
+            reelUrl: reelUrl
           };
           
           // Store in Map to avoid duplicates
           detectedReelsMap.set(reelId, reelData);
           
-          // Enhanced console output with reaction status
-          if (reactionData.hasReaction) {
-            console.log(`[IG Reel Tracker] Reel detected with reaction: {id: "${reelId}", timestamp: ${reelData.timestamp}, reactionType: "${reactionData.reactionType}"}`, reelData);
+          // Enhanced console output
+          if (hasReaction) {
+            console.log(`[IG Reel Tracker] Reel detected: {id: "${reelId}", url: "${reelUrl || 'N/A'}"}`);
+            console.log(`[IG Reel Tracker] Reaction detected: heart emoji found`);
           } else {
-            console.log(`[IG Reel Tracker] Reel detected (no reactions): {id: "${reelId}", timestamp: ${reelData.timestamp}}`, reelData);
+            console.log(`[IG Reel Tracker] Reel detected: {id: "${reelId}", url: "${reelUrl || 'N/A'}"}`);
           }
           
           // Schedule persistence with debouncing
@@ -1632,6 +1991,310 @@ window.igReelTracker = {
     console.log('[IG Reel Tracker] Manual initialization requested');
     const result = await initializeContentScript();
     return result.success;
+  },
+  
+  // =============================================================================
+  // DEBUG HELPERS
+  // =============================================================================
+  
+  /**
+   * Manual inspection of the messages container and its contents
+   * Highlights messages container and provides detailed analysis
+   * @returns {Object} Summary object with counts and analysis
+   */
+  inspectMessages: () => {
+    try {
+      console.info('%c[IG Reel Tracker Debug] Starting message container inspection...', 'color: #4285f4; font-weight: bold');
+      
+      // Clear any existing highlights
+      document.querySelectorAll('[data-ig-debug-highlight]').forEach(el => {
+        el.style.border = '';
+        el.removeAttribute('data-ig-debug-highlight');
+      });
+      
+      // Find messages container
+      const messagesContainer = findMessagesContainer();
+      const summary = {
+        messagesContainerFound: !!messagesContainer,
+        messagesContainerSelector: null,
+        messageElementsCount: 0,
+        videoElementsCount: 0,
+        reelElementsCount: 0,
+        workingSelectors: [],
+        failedSelectors: []
+      };
+      
+      if (!messagesContainer) {
+        console.warn('%c[IG Debug] ❌ Messages container not found!', 'color: #ea4335; font-weight: bold');
+        console.info('%c[IG Debug] Try navigating to a DM conversation first', 'color: #fbbc04');
+        return summary;
+      }
+      
+      // Highlight messages container with red border
+      messagesContainer.style.border = '3px solid #ea4335';
+      messagesContainer.setAttribute('data-ig-debug-highlight', 'messages-container');
+      
+      console.info('%c[IG Debug] ✅ Messages container found and highlighted (red border)', 'color: #34a853; font-weight: bold');
+      
+      // Count message elements
+      const messageElements = messagesContainer.querySelectorAll('[role="row"], div[style*="flex"], div[style*="padding"]');
+      summary.messageElementsCount = messageElements.length;
+      
+      // Count video elements
+      const videoElements = messagesContainer.querySelectorAll('video');
+      summary.videoElementsCount = videoElements.length;
+      
+      // Test reel detection selectors
+      const reelSelectors = [
+        'a[href*="/reel/"]',
+        'a[href*="/reels/"]', 
+        'a[href*="instagram.com/reel"]',
+        'div[role="row"] video',
+        'div[role="button"]:has(video)',
+        '[role="button"] video',
+        'div[style*="aspect-ratio"] video',
+        'video[src*="instagram"]',
+        'video[src*="cdninstagram"]'
+      ];
+      
+      let totalReelElements = 0;
+      reelSelectors.forEach(selector => {
+        try {
+          const elements = messagesContainer.querySelectorAll(selector);
+          if (elements.length > 0) {
+            summary.workingSelectors.push({ selector, count: elements.length });
+            totalReelElements += elements.length;
+          } else {
+            summary.failedSelectors.push(selector);
+          }
+        } catch (error) {
+          summary.failedSelectors.push(`${selector} (ERROR: ${error.message})`);
+        }
+      });
+      
+      summary.reelElementsCount = totalReelElements;
+      
+      // Console output with color coding
+      console.info('%c[IG Debug] 📊 INSPECTION SUMMARY:', 'color: #4285f4; font-weight: bold; font-size: 14px');
+      console.info(`%c  📁 Messages container: FOUND`, 'color: #34a853');
+      console.info(`%c  📝 Message elements: ${summary.messageElementsCount}`, 'color: #4285f4');
+      console.info(`%c  🎥 Video elements: ${summary.videoElementsCount}`, 'color: #4285f4');
+      console.info(`%c  🎯 Reel elements: ${summary.reelElementsCount}`, 'color: #4285f4');
+      
+      if (summary.workingSelectors.length > 0) {
+        console.info('%c  ✅ Working selectors:', 'color: #34a853');
+        summary.workingSelectors.forEach(({ selector, count }) => {
+          console.info(`%c    - ${selector}: ${count} elements`, 'color: #34a853');
+        });
+      }
+      
+      if (summary.failedSelectors.length > 0) {
+        console.warn('%c  ❌ Failed selectors:', 'color: #ea4335');
+        summary.failedSelectors.forEach(selector => {
+          console.warn(`%c    - ${selector}`, 'color: #ea4335');
+        });
+      }
+      
+      console.info('%c[IG Debug] 💡 The messages container is highlighted with a red border', 'color: #fbbc04');
+      console.info('%c[IG Debug] 💡 Use window.igReelTracker.highlightReels() to see detected reels', 'color: #fbbc04');
+      
+      return summary;
+      
+    } catch (error) {
+      console.error('[IG Debug] Error during inspection:', error);
+      return { error: error.message };
+    }
+  },
+  
+  /**
+   * Visual highlighting of all detected reel elements
+   * Green border for reels, yellow border for reels with reactions
+   * @param {boolean} toggle - Toggle highlighting on/off
+   * @returns {Object} Summary of highlighted elements
+   */
+  highlightReels: (toggle = true) => {
+    try {
+      const summary = {
+        reelsHighlighted: 0,
+        reelsWithReactions: 0,
+        reelsWithoutReactions: 0
+      };
+      
+      if (!toggle) {
+        // Remove existing highlights
+        document.querySelectorAll('[data-ig-debug-reel-highlight]').forEach(el => {
+          el.style.border = '';
+          el.style.position = '';
+          el.removeAttribute('data-ig-debug-reel-highlight');
+          el.removeAttribute('title');
+        });
+        console.info('%c[IG Debug] 🎨 Reel highlighting removed', 'color: #4285f4');
+        return summary;
+      }
+      
+      console.info('%c[IG Reel Tracker Debug] Starting visual reel highlighting...', 'color: #4285f4; font-weight: bold');
+      
+      // Find messages container
+      const messagesContainer = findMessagesContainer();
+      if (!messagesContainer) {
+        console.warn('%c[IG Debug] ❌ No messages container found. Cannot highlight reels.', 'color: #ea4335');
+        return summary;
+      }
+      
+      // Use the same detection logic as the main function
+      const reelElements = detectReelsInConversation();
+      
+      if (reelElements.length === 0) {
+        console.warn('%c[IG Debug] ❌ No reel elements found to highlight', 'color: #ea4335');
+        return summary;
+      }
+      
+      console.info(`%c[IG Debug] 🎯 Found ${reelElements.length} reel elements to highlight`, 'color: #4285f4');
+      
+      reelElements.forEach((reelElement, index) => {
+        try {
+          // Validate element
+          if (!validateReelElement(reelElement)) {
+            return;
+          }
+          
+          const reelId = extractReelId(reelElement);
+          const messageContainer = findMessageContainer(reelElement);
+          const hasReaction = messageContainer ? detectEmojiReactions(messageContainer) : false;
+          
+          // Apply highlighting
+          if (hasReaction) {
+            reelElement.style.border = '3px solid #fbbc04'; // Yellow for reactions
+            reelElement.setAttribute('title', `Reel ID: ${reelId} (HAS REACTIONS)`);
+            summary.reelsWithReactions++;
+          } else {
+            reelElement.style.border = '3px solid #34a853'; // Green for regular reels
+            reelElement.setAttribute('title', `Reel ID: ${reelId}`);
+            summary.reelsWithoutReactions++;
+          }
+          
+          reelElement.setAttribute('data-ig-debug-reel-highlight', 'true');
+          summary.reelsHighlighted++;
+          
+        } catch (elementError) {
+          console.error(`[IG Debug] Error highlighting reel ${index + 1}:`, elementError);
+        }
+      });
+      
+      // Console output with color coding
+      console.info('%c[IG Debug] 🎨 HIGHLIGHTING COMPLETE:', 'color: #4285f4; font-weight: bold; font-size: 14px');
+      console.info(`%c  🟢 Reels highlighted: ${summary.reelsHighlighted}`, 'color: #34a853');
+      console.info(`%c  🟡 Reels with reactions: ${summary.reelsWithReactions}`, 'color: #fbbc04');
+      console.info(`%c  🟢 Reels without reactions: ${summary.reelsWithoutReactions}`, 'color: #34a853');
+      console.info('%c  💡 Green border = reel, Yellow border = reel with reactions', 'color: #4285f4');
+      console.info('%c  💡 Hover over highlighted elements to see reel IDs', 'color: #4285f4');
+      console.info('%c  💡 Use window.igReelTracker.highlightReels(false) to remove highlights', 'color: #4285f4');
+      
+      return summary;
+      
+    } catch (error) {
+      console.error('[IG Debug] Error during highlighting:', error);
+      return { error: error.message };
+    }
+  },
+  
+  /**
+   * Test a specific selector within the messages container
+   * @param {string} selector - CSS selector to test
+   * @returns {Object} Results of selector test
+   */
+  testSelector: (selector) => {
+    try {
+      console.info(`%c[IG Reel Tracker Debug] Testing selector: ${selector}`, 'color: #4285f4; font-weight: bold');
+      
+      if (!selector || typeof selector !== 'string') {
+        console.error('%c[IG Debug] ❌ Invalid selector provided', 'color: #ea4335');
+        return { error: 'Invalid selector' };
+      }
+      
+      // Find messages container
+      const messagesContainer = findMessagesContainer();
+      if (!messagesContainer) {
+        console.warn('%c[IG Debug] ❌ No messages container found', 'color: #ea4335');
+        return { messagesContainerFound: false, elements: [] };
+      }
+      
+      const results = {
+        selector: selector,
+        messagesContainerFound: true,
+        elementsFound: 0,
+        elements: [],
+        validElements: 0,
+        invalidElements: 0
+      };
+      
+      try {
+        // Test selector within messages container
+        const elements = messagesContainer.querySelectorAll(selector);
+        results.elementsFound = elements.length;
+        
+        if (elements.length === 0) {
+          console.warn(`%c[IG Debug] ❌ Selector found 0 elements`, 'color: #ea4335');
+          return results;
+        }
+        
+        console.info(`%c[IG Debug] ✅ Selector found ${elements.length} elements`, 'color: #34a853');
+        
+        // Analyze each found element
+        Array.from(elements).forEach((element, index) => {
+          try {
+            const isValid = validateReelElement(element);
+            const elementInfo = {
+              index: index + 1,
+              tagName: element.tagName,
+              className: element.className || '(no class)',
+              href: element.href || element.getAttribute('href') || '(no href)',
+              isValid: isValid,
+              dimensions: {
+                width: element.getBoundingClientRect().width,
+                height: element.getBoundingClientRect().height
+              }
+            };
+            
+            results.elements.push(elementInfo);
+            
+            if (isValid) {
+              results.validElements++;
+            } else {
+              results.invalidElements++;
+            }
+            
+            // Log element details
+            const validText = isValid ? '✅ VALID' : '❌ INVALID';
+            const color = isValid ? '#34a853' : '#ea4335';
+            console.info(`%c[IG Debug]   ${index + 1}. ${elementInfo.tagName} - ${validText}`, `color: ${color}`);
+            console.info(`%c[IG Debug]      Class: ${elementInfo.className}`, 'color: #4285f4');
+            console.info(`%c[IG Debug]      Href: ${elementInfo.href}`, 'color: #4285f4');
+            console.info(`%c[IG Debug]      Size: ${elementInfo.dimensions.width}x${elementInfo.dimensions.height}px`, 'color: #4285f4');
+            
+          } catch (elementError) {
+            console.error(`[IG Debug] Error analyzing element ${index + 1}:`, elementError);
+          }
+        });
+        
+        // Summary
+        console.info('%c[IG Debug] 📊 SELECTOR TEST SUMMARY:', 'color: #4285f4; font-weight: bold; font-size: 14px');
+        console.info(`%c  🎯 Selector: ${selector}`, 'color: #4285f4');
+        console.info(`%c  📊 Total elements: ${results.elementsFound}`, 'color: #4285f4');
+        console.info(`%c  ✅ Valid elements: ${results.validElements}`, 'color: #34a853');
+        console.info(`%c  ❌ Invalid elements: ${results.invalidElements}`, 'color: #ea4335');
+        
+        return results;
+        
+      } catch (selectorError) {
+        console.error(`%c[IG Debug] ❌ Selector error: ${selectorError.message}`, 'color: #ea4335');
+        return { ...results, error: selectorError.message };
+      }
+      
+    } catch (error) {
+      console.error('[IG Debug] Error testing selector:', error);
+      return { error: error.message };
+    }
   }
 };
 
@@ -1641,3 +2304,782 @@ console.log('[IG Reel Tracker] - window.igReelTracker.detectReels() - Detect ree
 console.log('[IG Reel Tracker] - window.igReelTracker.getReelData() - Get stored reel data');
 console.log('[IG Reel Tracker] - window.igReelTracker.isOnDMPage() - Check if on Instagram DM page');
 console.log('[IG Reel Tracker] - window.igReelTracker.isInitialized() - Check initialization status');
+console.log('');
+console.log('%c[IG Reel Tracker] 🛠️  DEBUG FUNCTIONS AVAILABLE:', 'color: #4285f4; font-weight: bold');
+console.log('%c[IG Debug] - window.igReelTracker.inspectMessages() - Inspect messages container', 'color: #4285f4');
+console.log('%c[IG Debug] - window.igReelTracker.highlightReels() - Visually highlight detected reels', 'color: #4285f4');
+console.log('%c[IG Debug] - window.igReelTracker.testSelector("selector") - Test a specific CSS selector', 'color: #4285f4');
+console.log('%c[IG Debug] - window.igReelTracker.highlightReels(false) - Remove highlights', 'color: #4285f4');
+console.log('');
+console.log('%c[IG Debug] 💡 USAGE EXAMPLES:', 'color: #fbbc04; font-weight: bold');
+console.log('%c[IG Debug]   window.igReelTracker.inspectMessages()', 'color: #fbbc04');
+console.log('%c[IG Debug]   window.igReelTracker.highlightReels()', 'color: #fbbc04');
+console.log('%c[IG Debug]   window.igReelTracker.testSelector(\'a[href*="/reel/"]\')  ', 'color: #fbbc04');
+
+// =============================================================================
+// EMERGENCY DOM INVESTIGATION TOOLS
+// =============================================================================
+
+/**
+ * Emergency diagnostic function to analyze ALL messages in the container
+ * Provides detailed analysis of each child element to understand DOM structure
+ * @returns {Object} Comprehensive analysis results
+ */
+window.igReelTracker.analyzeMessages = () => {
+  try {
+    console.info('%c[IG EMERGENCY DIAGNOSTIC] 🚨 Starting comprehensive message analysis...', 'color: #ea4335; font-weight: bold; font-size: 16px');
+    
+    const messagesContainer = findMessagesContainer();
+    if (!messagesContainer) {
+      console.error('%c[IG EMERGENCY] ❌ Messages container not found!', 'color: #ea4335; font-weight: bold');
+      return { error: 'Messages container not found' };
+    }
+    
+    console.info(`%c[IG EMERGENCY] ✅ Messages container found with ${messagesContainer.children.length} child elements`, 'color: #34a853; font-weight: bold');
+    
+    const analysis = {
+      containerInfo: {
+        tagName: messagesContainer.tagName,
+        className: messagesContainer.className || '(no class)',
+        role: messagesContainer.getAttribute('role') || '(no role)',
+        childCount: messagesContainer.children.length,
+        selector: getElementSelector(messagesContainer)
+      },
+      messages: [],
+      summary: {
+        textMessages: 0,
+        mediaMessages: 0,
+        reelMessages: 0,
+        unknownMessages: 0
+      }
+    };
+    
+    // Analyze each child element
+    Array.from(messagesContainer.children).forEach((child, index) => {
+      console.log(`\n%c[IG EMERGENCY] 🔍 Analyzing Message #${index + 1}:`, 'color: #4285f4; font-weight: bold');
+      
+      const messageAnalysis = analyzeMessageElement(child, index + 1);
+      analysis.messages.push(messageAnalysis);
+      
+      // Update summary counts
+      if (messageAnalysis.type === 'text') analysis.summary.textMessages++;
+      else if (messageAnalysis.type === 'media') analysis.summary.mediaMessages++;
+      else if (messageAnalysis.type === 'reel') analysis.summary.reelMessages++;
+      else analysis.summary.unknownMessages++;
+    });
+    
+    // Log comprehensive summary
+    console.log('\n%c[IG EMERGENCY] 📊 COMPREHENSIVE ANALYSIS SUMMARY:', 'color: #ea4335; font-weight: bold; font-size: 16px');
+    console.log('%c' + '='.repeat(80), 'color: #ea4335');
+    console.log(`%cContainer: ${analysis.containerInfo.tagName}${analysis.containerInfo.className ? '.' + analysis.containerInfo.className : ''}`, 'color: #4285f4');
+    console.log(`%cRole: ${analysis.containerInfo.role}`, 'color: #4285f4');
+    console.log(`%cTotal Messages: ${analysis.containerInfo.childCount}`, 'color: #4285f4');
+    console.log(`%cText Messages: ${analysis.summary.textMessages}`, 'color: #34a853');
+    console.log(`%cMedia Messages: ${analysis.summary.mediaMessages}`, 'color: #fbbc04');
+    console.log(`%cReel Messages: ${analysis.summary.reelMessages}`, 'color: #ea4335');
+    console.log(`%cUnknown Messages: ${analysis.summary.unknownMessages}`, 'color: #999');
+    console.log('%c' + '='.repeat(80), 'color: #ea4335');
+    
+    if (analysis.summary.reelMessages === 0) {
+      console.error('%c[IG EMERGENCY] 🚨 CRITICAL ISSUE: ZERO reels detected despite reels being present!', 'color: #ea4335; font-weight: bold; font-size: 16px');
+      console.error('%c[IG EMERGENCY] 🚨 Current selectors are NOT matching Instagram\'s actual DOM structure', 'color: #ea4335; font-weight: bold');
+      console.info('%c[IG EMERGENCY] 💡 Next step: Run window.igReelTracker.findReelPatterns() to discover working selectors', 'color: #fbbc04; font-weight: bold');
+    }
+    
+    return analysis;
+    
+  } catch (error) {
+    console.error('[IG EMERGENCY] Error during message analysis:', error);
+    return { error: error.message };
+  }
+};
+
+/**
+ * Analyze a single message element in detail
+ * @param {Element} element - The message element to analyze
+ * @param {number} messageNumber - The message number for logging
+ * @returns {Object} Detailed analysis of the message
+ */
+function analyzeMessageElement(element, messageNumber) {
+  try {
+    const analysis = {
+      messageNumber: messageNumber,
+      tagName: element.tagName,
+      className: element.className || '(no class)',
+      role: element.getAttribute('role') || '(no role)',
+      type: 'unknown',
+      containsVideo: false,
+      containsLinks: [],
+      containsImages: [],
+      possibleReelIndicators: [],
+      fullStructure: '',
+      attributes: {},
+      dimensions: { width: 0, height: 0 }
+    };
+    
+    // Get dimensions
+    try {
+      const rect = element.getBoundingClientRect();
+      analysis.dimensions = { width: rect.width, height: rect.height };
+    } catch (e) {
+      analysis.dimensions = { width: 'N/A', height: 'N/A' };
+    }
+    
+    // Get all attributes
+    Array.from(element.attributes).forEach(attr => {
+      analysis.attributes[attr.name] = attr.value;
+    });
+    
+    // Check for video elements
+    const videoElements = element.querySelectorAll('video');
+    if (videoElements.length > 0) {
+      analysis.containsVideo = true;
+      analysis.possibleReelIndicators.push(`Found ${videoElements.length} video element(s)`);
+      analysis.type = 'reel';
+    }
+    
+    // Check for links
+    const linkElements = element.querySelectorAll('a');
+    linkElements.forEach(link => {
+      const href = link.href || link.getAttribute('href') || '(no href)';
+      const text = link.textContent?.trim() || '(no text)';
+      analysis.containsLinks.push({ href, text });
+      
+      // Check if this looks like a reel link
+      if (href.includes('/reel/') || href.includes('/reels/') || href.includes('instagram.com/reel')) {
+        analysis.possibleReelIndicators.push(`Reel link found: ${href}`);
+        analysis.type = 'reel';
+      }
+    });
+    
+    // Check for images
+    const imageElements = element.querySelectorAll('img');
+    imageElements.forEach(img => {
+      const src = img.src || img.getAttribute('src') || '(no src)';
+      const alt = img.alt || '(no alt)';
+      analysis.containsImages.push({ src, alt });
+      
+      // Check for Instagram CDN patterns
+      if (src.includes('cdninstagram') || src.includes('scontent')) {
+        analysis.possibleReelIndicators.push(`Instagram CDN image: ${src}`);
+        if (analysis.type === 'unknown') analysis.type = 'media';
+      }
+    });
+    
+    // Check for aspect ratio indicators (video aspect ratio trick)
+    const style = element.style.cssText || '';
+    if (style.includes('aspect-ratio') || style.includes('padding-bottom')) {
+      analysis.possibleReelIndicators.push('Aspect ratio styling detected (possible video)');
+      if (analysis.type === 'unknown') analysis.type = 'media';
+    }
+    
+    // Check for background images
+    const backgroundImage = element.style.backgroundImage || '';
+    if (backgroundImage && backgroundImage !== 'none') {
+      analysis.possibleReelIndicators.push(`Background image: ${backgroundImage}`);
+      if (analysis.type === 'unknown') analysis.type = 'media';
+    }
+    
+    // Check for play button indicators
+    const playButtons = element.querySelectorAll('svg[aria-label*="play" i], svg[aria-label*="video" i]');
+    if (playButtons.length > 0) {
+      analysis.possibleReelIndicators.push(`Found ${playButtons.length} play button(s)`);
+      if (analysis.type === 'unknown') analysis.type = 'reel';
+    }
+    
+    // Check for Instagram-specific data attributes
+    const dataAttributes = ['data-bloks-name', 'data-media-id', 'data-testid'];
+    dataAttributes.forEach(attr => {
+      const value = element.getAttribute(attr);
+      if (value) {
+        analysis.possibleReelIndicators.push(`${attr}: ${value}`);
+        if (value.includes('reel') || value.includes('video') || value.includes('media')) {
+          if (analysis.type === 'unknown') analysis.type = 'reel';
+        }
+      }
+    });
+    
+    // Determine message type if still unknown
+    if (analysis.type === 'unknown') {
+      if (analysis.containsLinks.length > 0 || analysis.containsImages.length > 0) {
+        analysis.type = 'media';
+      } else if (element.textContent && element.textContent.trim().length > 0) {
+        analysis.type = 'text';
+      }
+    }
+    
+    // Get first 200 chars of HTML structure
+    try {
+      analysis.fullStructure = element.outerHTML.substring(0, 200) + (element.outerHTML.length > 200 ? '...' : '');
+    } catch (e) {
+      analysis.fullStructure = 'Could not extract HTML structure';
+    }
+    
+    // Log detailed analysis
+    console.log(`%cMessage #${messageNumber}:`, 'color: #4285f4; font-weight: bold');
+    console.log(`%c  Type: ${analysis.type.toUpperCase()}`, getTypeColor(analysis.type));
+    console.log(`%c  Tag: ${analysis.tagName}`, 'color: #999');
+    console.log(`%c  Class: ${analysis.className}`, 'color: #999');
+    console.log(`%c  Role: ${analysis.role}`, 'color: #999');
+    console.log(`%c  Size: ${analysis.dimensions.width}x${analysis.dimensions.height}px`, 'color: #999');
+    console.log(`%c  Contains video: ${analysis.containsVideo ? 'YES' : 'NO'}`, analysis.containsVideo ? 'color: #34a853' : 'color: #999');
+    
+    if (analysis.containsLinks.length > 0) {
+      console.log(`%c  Contains links: ${analysis.containsLinks.length}`, 'color: #fbbc04');
+      analysis.containsLinks.forEach((link, i) => {
+        console.log(`%c    ${i + 1}. ${link.href}`, 'color: #fbbc04');
+      });
+    }
+    
+    if (analysis.containsImages.length > 0) {
+      console.log(`%c  Contains images: ${analysis.containsImages.length}`, 'color: #fbbc04');
+      analysis.containsImages.forEach((img, i) => {
+        console.log(`%c    ${i + 1}. ${img.src}`, 'color: #fbbc04');
+      });
+    }
+    
+    if (analysis.possibleReelIndicators.length > 0) {
+      console.log(`%c  Possible reel indicators:`, 'color: #ea4335');
+      analysis.possibleReelIndicators.forEach(indicator => {
+        console.log(`%c    - ${indicator}`, 'color: #ea4335');
+      });
+    }
+    
+    console.log(`%c  Full structure: ${analysis.fullStructure}`, 'color: #999');
+    
+    return analysis;
+    
+  } catch (error) {
+    console.error(`[IG EMERGENCY] Error analyzing message ${messageNumber}:`, error);
+    return {
+      messageNumber: messageNumber,
+      type: 'error',
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Get color for message type
+ * @param {string} type - Message type
+ * @returns {string} CSS color
+ */
+function getTypeColor(type) {
+  switch (type) {
+    case 'reel': return 'color: #ea4335; font-weight: bold';
+    case 'media': return 'color: #fbbc04; font-weight: bold';
+    case 'text': return 'color: #34a853; font-weight: bold';
+    default: return 'color: #999';
+  }
+}
+
+/**
+ * Get unique selector for an element
+ * @param {Element} element - Element to get selector for
+ * @returns {string} Unique selector
+ */
+function getElementSelector(element) {
+  try {
+    if (element.id) return `#${element.id}`;
+    if (element.className) {
+      const classes = element.className.split(' ').filter(c => c.trim());
+      if (classes.length > 0) return `${element.tagName.toLowerCase()}.${classes[0]}`;
+    }
+    return element.tagName.toLowerCase();
+  } catch (e) {
+    return 'unknown';
+  }
+}
+
+/**
+ * Pattern discovery function to find working reel selectors
+ * Searches for ANY elements that might indicate reel content
+ * @returns {Object} Detailed pattern discovery results
+ */
+window.igReelTracker.findReelPatterns = () => {
+  try {
+    console.info('%c[IG PATTERN DISCOVERY] 🔍 Starting reel pattern discovery...', 'color: #4285f4; font-weight: bold; font-size: 16px');
+    
+    const messagesContainer = findMessagesContainer();
+    if (!messagesContainer) {
+      console.error('%c[IG PATTERN] ❌ Messages container not found!', 'color: #ea4335; font-weight: bold');
+      return { error: 'Messages container not found' };
+    }
+    
+    const patterns = {
+      reelTextElements: [],
+      videoPatterns: [],
+      instagramAttributes: [],
+      clickableElements: [],
+      mediaContainers: [],
+      summary: {
+        totalReelIndicators: 0,
+        potentialSelectors: []
+      }
+    };
+    
+    // 1. Search for ANY element containing "reel" text (case insensitive)
+    console.log('%c[IG PATTERN] 🔍 Searching for elements containing "reel" text...', 'color: #4285f4');
+    const reelTextElements = messagesContainer.querySelectorAll('*');
+    reelTextElements.forEach(element => {
+      try {
+        const text = element.textContent || '';
+        if (text.toLowerCase().includes('reel')) {
+          patterns.reelTextElements.push({
+            element: element.tagName,
+            text: text.substring(0, 100),
+            selector: getElementSelector(element),
+            path: generateDOMPath(element)
+          });
+        }
+      } catch (e) {
+        // Skip elements that can't be processed
+      }
+    });
+    
+    // 2. Search for video patterns
+    console.log('%c[IG PATTERN] 🎥 Searching for video patterns...', 'color: #4285f4');
+    const videoPatterns = [
+      { pattern: '.mp4', elements: [] },
+      { pattern: '.m3u8', elements: [] },
+      { pattern: 'video/mp4', elements: [] },
+      { pattern: 'cdninstagram', elements: [] },
+      { pattern: 'scontent', elements: [] }
+    ];
+    
+    videoPatterns.forEach(vp => {
+      const elements = messagesContainer.querySelectorAll(`[src*="${vp.pattern}"], [href*="${vp.pattern}"], [style*="${vp.pattern}"]`);
+      if (elements.length > 0) {
+        vp.elements = Array.from(elements).map(el => ({
+          tagName: el.tagName,
+          src: el.src || el.getAttribute('src') || el.getAttribute('href') || '(no src)',
+          selector: getElementSelector(el)
+        }));
+      }
+    });
+    patterns.videoPatterns = videoPatterns;
+    
+    // 3. Search for Instagram-specific attributes
+    console.log('%c[IG PATTERN] 🏷️ Searching for Instagram-specific attributes...', 'color: #4285f4');
+    const instagramAttributes = [
+      'data-bloks-name',
+      'data-media-id',
+      'data-testid',
+      'data-visualcompletion',
+      'aria-label'
+    ];
+    
+    instagramAttributes.forEach(attr => {
+      const elements = messagesContainer.querySelectorAll(`[${attr}]`);
+      if (elements.length > 0) {
+        patterns.instagramAttributes.push({
+          attribute: attr,
+          elements: Array.from(elements).map(el => ({
+            value: el.getAttribute(attr),
+            selector: getElementSelector(el),
+            tagName: el.tagName
+          }))
+        });
+      }
+    });
+    
+    // 4. Find all clickable elements within messages
+    console.log('%c[IG PATTERN] 🖱️ Searching for clickable elements...', 'color: #4285f4');
+    const clickableSelectors = [
+      '[role="button"]',
+      '[role="link"]',
+      '[tabindex]',
+      'a[href]',
+      'button'
+    ];
+    
+    clickableSelectors.forEach(selector => {
+      try {
+        const elements = messagesContainer.querySelectorAll(selector);
+        if (elements.length > 0) {
+          patterns.clickableElements.push({
+            selector: selector,
+            count: elements.length,
+            elements: Array.from(elements).slice(0, 5).map(el => ({
+              tagName: el.tagName,
+              role: el.getAttribute('role') || '(no role)',
+              href: el.href || el.getAttribute('href') || '(no href)',
+              ariaLabel: el.getAttribute('aria-label') || '(no aria-label)'
+            }))
+          });
+        }
+      } catch (e) {
+        // Skip invalid selectors
+      }
+    });
+    
+    // 5. Search for media containers with specific patterns
+    console.log('%c[IG PATTERN] 📦 Searching for media containers...', 'color: #4285f4');
+    const mediaContainerSelectors = [
+      'div[style*="aspect-ratio"]',
+      'div[style*="padding-bottom"]',
+      'div[class*="video"]',
+      'div[class*="media"]',
+      'div[class*="reel"]',
+      'div[data-testid*="media"]',
+      'div[data-testid*="video"]'
+    ];
+    
+    mediaContainerSelectors.forEach(selector => {
+      try {
+        const elements = messagesContainer.querySelectorAll(selector);
+        if (elements.length > 0) {
+          patterns.mediaContainers.push({
+            selector: selector,
+            count: elements.length,
+            elements: Array.from(elements).slice(0, 3).map(el => ({
+              tagName: el.tagName,
+              className: el.className || '(no class)',
+              style: el.style.cssText.substring(0, 100) || '(no style)',
+              dimensions: {
+                width: el.getBoundingClientRect().width,
+                height: el.getBoundingClientRect().height
+              }
+            }))
+          });
+        }
+      } catch (e) {
+        // Skip invalid selectors
+      }
+    });
+    
+    // Calculate summary
+    patterns.summary.totalReelIndicators = 
+      patterns.reelTextElements.length +
+      patterns.videoPatterns.reduce((sum, vp) => sum + vp.elements.length, 0) +
+      patterns.instagramAttributes.reduce((sum, attr) => sum + attr.elements.length, 0);
+    
+    // Generate potential selectors based on findings
+    patterns.summary.potentialSelectors = generatePotentialSelectors(patterns);
+    
+    // Log comprehensive results
+    console.log('\n%c[IG PATTERN] 📊 PATTERN DISCOVERY RESULTS:', 'color: #4285f4; font-weight: bold; font-size: 16px');
+    console.log('%c' + '='.repeat(80), 'color: #4285f4');
+    
+    console.log(`%cReel text elements: ${patterns.reelTextElements.length}`, 'color: #4285f4');
+    patterns.reelTextElements.forEach((item, i) => {
+      console.log(`%c  ${i + 1}. ${item.element} - "${item.text}"`, 'color: #4285f4');
+    });
+    
+    console.log(`\n%cVideo patterns found:`, 'color: #4285f4');
+    patterns.videoPatterns.forEach(vp => {
+      if (vp.elements.length > 0) {
+        console.log(`%c  ${vp.pattern}: ${vp.elements.length} elements`, 'color: #34a853');
+        vp.elements.slice(0, 3).forEach(el => {
+          console.log(`%c    - ${el.tagName} (${el.selector}): ${el.src}`, 'color: #34a853');
+        });
+      }
+    });
+    
+    console.log(`\n%cInstagram attributes:`, 'color: #4285f4');
+    patterns.instagramAttributes.forEach(attr => {
+      if (attr.elements.length > 0) {
+        console.log(`%c  ${attr.attribute}: ${attr.elements.length} elements`, 'color: #fbbc04');
+        attr.elements.slice(0, 3).forEach(el => {
+          console.log(`%c    - ${el.tagName} (${el.selector}): ${el.value}`, 'color: #fbbc04');
+        });
+      }
+    });
+    
+    console.log(`\n%cClickable elements:`, 'color: #4285f4');
+    patterns.clickableElements.forEach(clickable => {
+      console.log(`%c  ${clickable.selector}: ${clickable.count} elements`, 'color: #fbbc04');
+    });
+    
+    console.log(`\n%cMedia containers:`, 'color: #4285f4');
+    patterns.mediaContainers.forEach(container => {
+      console.log(`%c  ${container.selector}: ${container.count} elements`, 'color: #fbbc04');
+    });
+    
+    console.log(`\n%cPOTENTIAL SELECTORS:`, 'color: #ea4335; font-weight: bold');
+    patterns.summary.potentialSelectors.forEach((selector, i) => {
+      console.log(`%c  ${i + 1}. ${selector}`, 'color: #ea4335');
+    });
+    
+    console.log('%c' + '='.repeat(80), 'color: #4285f4');
+    console.log(`%cTotal reel indicators found: ${patterns.summary.totalReelIndicators}`, 'color: #4285f4; font-weight: bold');
+    console.log(`%cPotential selectors generated: ${patterns.summary.potentialSelectors.length}`, 'color: #4285f4; font-weight: bold');
+    
+    return patterns;
+    
+  } catch (error) {
+    console.error('[IG PATTERN] Error during pattern discovery:', error);
+    return { error: error.message };
+  }
+};
+
+/**
+ * Generate potential selectors based on discovered patterns
+ * @param {Object} patterns - Pattern discovery results
+ * @returns {Array} Array of potential CSS selectors
+ */
+function generatePotentialSelectors(patterns) {
+  const selectors = [];
+  
+  try {
+    // Based on video patterns
+    patterns.videoPatterns.forEach(vp => {
+      if (vp.elements.length > 0) {
+        vp.elements.forEach(el => {
+          if (el.src.includes('cdninstagram') || el.src.includes('scontent')) {
+            selectors.push(`${el.tagName}[src*="cdninstagram"]`);
+            selectors.push(`${el.tagName}[src*="scontent"]`);
+          }
+        });
+      }
+    });
+    
+    // Based on Instagram attributes
+    patterns.instagramAttributes.forEach(attr => {
+      if (attr.attribute === 'data-testid' && attr.elements.length > 0) {
+        attr.elements.forEach(el => {
+          if (el.value.includes('reel') || el.value.includes('video') || el.value.includes('media')) {
+            selectors.push(`[data-testid*="${el.value.split('-')[0]}"]`);
+          }
+        });
+      }
+    });
+    
+    // Based on media containers
+    patterns.mediaContainers.forEach(container => {
+      if (container.count > 0) {
+        selectors.push(container.selector);
+      }
+    });
+    
+    // Based on clickable elements with specific patterns
+    patterns.clickableElements.forEach(clickable => {
+      if (clickable.selector === '[role="button"]' && clickable.count > 0) {
+        selectors.push('[role="button"]:has(img[src*="cdninstagram"])');
+        selectors.push('[role="button"]:has(video)');
+      }
+    });
+    
+    // Common Instagram patterns
+    selectors.push(
+      'div[style*="aspect-ratio"]:has(img[src*="cdninstagram"])',
+      'div[style*="padding-bottom"]:has(img[src*="cdninstagram"])',
+      'div[role="button"]:has(div[style*="aspect-ratio"])',
+      'div[class*="x1i10hfl"]:has(img[src*="scontent"])',
+      'a[role="link"][href*="/reel/"]',
+      'div:has(> div > div > img[alt=""])',
+      '[data-visualcompletion="media-vc-image"]',
+      'div:has(svg[aria-label="Play"])',
+      'img[src*="cdninstagram"][style*="object-fit"]'
+    );
+    
+    // Remove duplicates
+    return [...new Set(selectors)];
+    
+  } catch (error) {
+    console.error('[IG PATTERN] Error generating potential selectors:', error);
+    return [];
+  }
+}
+
+/**
+ * Manual reel identification helper
+ * Allows manual marking of an element as a reel for testing
+ * @param {Element} element - Element to mark as reel
+ * @returns {Object} Analysis results of the marked element
+ */
+window.igReelTracker.markAsReel = (element) => {
+  try {
+    if (!element) {
+      console.error('%c[IG MANUAL] ❌ No element provided!', 'color: #ea4335; font-weight: bold');
+      console.info('%c[IG MANUAL] 💡 Usage: Right-click on a reel message → Inspect Element → Copy element → window.igReelTracker.markAsReel(element)', 'color: #fbbc04');
+      return { error: 'No element provided' };
+    }
+    
+    console.info('%c[IG MANUAL] 🎯 Manual reel identification started...', 'color: #4285f4; font-weight: bold; font-size: 16px');
+    
+    // Highlight the element
+    element.style.border = '4px solid #ea4335';
+    element.style.boxShadow = '0 0 20px rgba(234, 67, 53, 0.5)';
+    element.setAttribute('data-ig-manual-reel', 'true');
+    
+    const analysis = {
+      element: element.tagName,
+      className: element.className || '(no class)',
+      role: element.getAttribute('role') || '(no role)',
+      domPath: generateDOMPath(element),
+      attributes: {},
+      identifiers: [],
+      potentialSelectors: []
+    };
+    
+    // Extract all attributes
+    Array.from(element.attributes).forEach(attr => {
+      analysis.attributes[attr.name] = attr.value;
+    });
+    
+    // Look for potential identifiers
+    const identifierPatterns = [
+      { attr: 'data-testid', pattern: /reel|video|media/i },
+      { attr: 'data-bloks-name', pattern: /reel|video|media/i },
+      { attr: 'aria-label', pattern: /reel|video|media|play/i },
+      { attr: 'class', pattern: /reel|video|media/i },
+      { attr: 'id', pattern: /reel|video|media/i }
+    ];
+    
+    identifierPatterns.forEach(pattern => {
+      const value = element.getAttribute(pattern.attr);
+      if (value && pattern.pattern.test(value)) {
+        analysis.identifiers.push(`${pattern.attr}: ${value}`);
+      }
+    });
+    
+    // Generate potential selectors for this specific element
+    analysis.potentialSelectors = generateElementSelectors(element);
+    
+    // Log detailed analysis
+    console.log('\n%c[IG MANUAL] 📊 MANUAL REEL ANALYSIS:', 'color: #4285f4; font-weight: bold; font-size: 16px');
+    console.log('%c' + '='.repeat(80), 'color: #4285f4');
+    console.log(`%cElement: ${analysis.element}`, 'color: #4285f4');
+    console.log(`%cClass: ${analysis.className}`, 'color: #4285f4');
+    console.log(`%cRole: ${analysis.role}`, 'color: #4285f4');
+    console.log(`%cDOM Path: ${analysis.domPath}`, 'color: #4285f4');
+    
+    if (analysis.identifiers.length > 0) {
+      console.log(`\n%cIdentifiers found:`, 'color: #34a853');
+      analysis.identifiers.forEach(id => {
+        console.log(`%c  - ${id}`, 'color: #34a853');
+      });
+    }
+    
+    console.log(`\n%cPotential selectors for this element:`, 'color: #ea4335');
+    analysis.potentialSelectors.forEach((selector, i) => {
+      console.log(`%c  ${i + 1}. ${selector}`, 'color: #ea4335');
+    });
+    
+    console.log('%c' + '='.repeat(80), 'color: #4285f4');
+    console.log('%c💡 Element is now highlighted with red border and shadow', 'color: #fbbc04');
+    console.log('%c💡 Test selectors with: window.igReelTracker.testSelector("selector")', 'color: #fbbc04');
+    
+    return analysis;
+    
+  } catch (error) {
+    console.error('[IG MANUAL] Error during manual reel identification:', error);
+    return { error: error.message };
+  }
+};
+
+/**
+ * Generate potential selectors for a specific element
+ * @param {Element} element - Element to generate selectors for
+ * @returns {Array} Array of potential CSS selectors
+ */
+function generateElementSelectors(element) {
+  const selectors = [];
+  
+  try {
+    // Basic selectors
+    if (element.id) {
+      selectors.push(`#${element.id}`);
+    }
+    
+    if (element.className) {
+      const classes = element.className.split(' ').filter(c => c.trim());
+      classes.forEach(cls => {
+        if (cls.length > 0) {
+          selectors.push(`${element.tagName.toLowerCase()}.${cls}`);
+          selectors.push(`.${cls}`);
+        }
+      });
+    }
+    
+    // Role-based selectors
+    const role = element.getAttribute('role');
+    if (role) {
+      selectors.push(`[role="${role}"]`);
+      selectors.push(`${element.tagName.toLowerCase()}[role="${role}"]`);
+    }
+    
+    // Data attribute selectors
+    const dataAttrs = ['data-testid', 'data-bloks-name', 'data-media-id'];
+    dataAttrs.forEach(attr => {
+      const value = element.getAttribute(attr);
+      if (value) {
+        selectors.push(`[${attr}="${value}"]`);
+        selectors.push(`${element.tagName.toLowerCase()}[${attr}="${value}"]`);
+      }
+    });
+    
+    // Aria label selectors
+    const ariaLabel = element.getAttribute('aria-label');
+    if (ariaLabel) {
+      selectors.push(`[aria-label="${ariaLabel}"]`);
+      selectors.push(`${element.tagName.toLowerCase()}[aria-label="${ariaLabel}"]`);
+    }
+    
+    // Style-based selectors
+    const style = element.style.cssText || '';
+    if (style.includes('aspect-ratio')) {
+      selectors.push(`${element.tagName.toLowerCase()}[style*="aspect-ratio"]`);
+    }
+    if (style.includes('padding-bottom')) {
+      selectors.push(`${element.tagName.toLowerCase()}[style*="padding-bottom"]`);
+    }
+    
+    // Parent-child relationship selectors
+    if (element.parentElement) {
+      const parent = element.parentElement;
+      if (parent.className) {
+        const parentClasses = parent.className.split(' ').filter(c => c.trim());
+        parentClasses.forEach(cls => {
+          if (cls.length > 0) {
+            selectors.push(`.${cls} > ${element.tagName.toLowerCase()}`);
+          }
+        });
+      }
+    }
+    
+    // Remove duplicates and return
+    return [...new Set(selectors)];
+    
+  } catch (error) {
+    console.error('[IG MANUAL] Error generating element selectors:', error);
+    return [];
+  }
+}
+
+/**
+ * Remove manual reel highlighting
+ */
+window.igReelTracker.clearManualHighlights = () => {
+  try {
+    const highlightedElements = document.querySelectorAll('[data-ig-manual-reel]');
+    highlightedElements.forEach(el => {
+      el.style.border = '';
+      el.style.boxShadow = '';
+      el.removeAttribute('data-ig-manual-reel');
+    });
+    
+    console.info(`%c[IG MANUAL] 🧹 Cleared ${highlightedElements.length} manual highlights`, 'color: #4285f4');
+    return { cleared: highlightedElements.length };
+    
+  } catch (error) {
+    console.error('[IG MANUAL] Error clearing highlights:', error);
+    return { error: error.message };
+  }
+};
+
+// Update console help
+console.log('');
+console.log('%c[IG EMERGENCY] 🚨 EMERGENCY DIAGNOSTIC TOOLS AVAILABLE:', 'color: #ea4335; font-weight: bold; font-size: 14px');
+console.log('%c[IG EMERGENCY] - window.igReelTracker.analyzeMessages() - Analyze ALL messages in detail', 'color: #ea4335');
+console.log('%c[IG EMERGENCY] - window.igReelTracker.findReelPatterns() - Discover working reel selectors', 'color: #ea4335');
+console.log('%c[IG EMERGENCY] - window.igReelTracker.markAsReel(element) - Manually mark element as reel', 'color: #ea4335');
+console.log('%c[IG EMERGENCY] - window.igReelTracker.clearManualHighlights() - Clear manual highlights', 'color: #ea4335');
+console.log('');
+console.log('%c[IG EMERGENCY] 💡 EMERGENCY WORKFLOW:', 'color: #fbbc04; font-weight: bold');
+console.log('%c[IG EMERGENCY]   1. Run window.igReelTracker.analyzeMessages() to see what\'s in the container', 'color: #fbbc04');
+console.log('%c[IG EMERGENCY]   2. Run window.igReelTracker.findReelPatterns() to discover working selectors', 'color: #fbbc04');
+console.log('%c[IG EMERGENCY]   3. Right-click a reel → Inspect → window.igReelTracker.markAsReel(element)', 'color: #fbbc04');
+console.log('%c[IG EMERGENCY]   4. Test discovered selectors with window.igReelTracker.testSelector()', 'color: #fbbc04');
+
