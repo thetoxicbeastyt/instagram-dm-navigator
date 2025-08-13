@@ -2,54 +2,89 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>IG Reel Tracker</title>
-  <link rel="stylesheet" href="../styles/popup.css">
+  <style>
+    body {
+      width: 300px;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    h1 {
+      font-size: 20px;
+      margin-bottom: 20px;
+    }
+    .button {
+      width: 100%;
+      padding: 10px;
+      font-size: 16px;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin-bottom: 10px;
+    }
+    #initButton {
+      background: linear-gradient(45deg, #00C851, #007E33);
+    }
+    #initButton:hover {
+      background: linear-gradient(45deg, #007E33, #00C851);
+    }
+    #initButton:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+    }
+    #testButton {
+      background: linear-gradient(45deg, #833AB4, #E1306C);
+    }
+    #testButton:hover {
+      background: linear-gradient(45deg, #E1306C, #833AB4);
+    }
+    #testButton:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+    }
+    #testResult {
+      display: none;
+      margin-top: 20px;
+      padding: 10px;
+      border-radius: 5px;
+      font-size: 14px;
+    }
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .info {
+      background-color: #cce5ff;
+      color: #004085;
+    }
+    .error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+    .status {
+      margin: 10px 0;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      background-color: #f8f9fa;
+      color: #6c757d;
+    }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <header class="header">
-      <h1 class="title">IG Reel Tracker</h1>
-      <div class="status-indicator" id="statusIndicator">
-        <span class="status-dot" id="statusDot"></span>
-        <span class="status-text" id="statusText">Initializing...</span>
-      </div>
-    </header>
-    
-    <main class="main-content">
-      <div class="info-section">
-        <div class="info-item">
-          <span class="info-label">Status:</span>
-          <span class="info-value" id="extensionStatus">Extension Ready</span>
-        </div>
-        
-        <div class="info-item">
-          <span class="info-label">Page:</span>
-          <span class="info-value" id="pageStatus">Initializing...</span>
-        </div>
-        
-        <div class="info-item">
-          <span class="info-label">Tracked Reels:</span>
-          <span class="info-value" id="reelCount">0</span>
-        </div>
-      </div>
-      
-      <div class="actions-section">
-        <button class="action-button primary" id="toggleButton">
-          <span id="toggleText">Enable Tracking</span>
-        </button>
-        
-        <button class="action-button secondary" id="refreshButton">
-          Refresh
-        </button>
-      </div>
-      
-      <div class="footer">
-        <p class="version">v1.0.0</p>
-      </div>
-    </main>
+  <h1>IG Reel Tracker</h1>
+  
+  <div id="statusDisplay" class="status">
+    Status: Not Initialized
   </div>
   
+  <button id="initButton" class="button">Begin Initialization</button>
+  <button id="testButton" class="button">Test Instagram DM Injection</button>
+  
+  <div id="testResult"></div>
   <script src="popup.js"></script>
 </body>
 </html>

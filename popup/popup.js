@@ -1,365 +1,134 @@
-/**
- * IG Reel Tracker - Popup Script
- * Handles popup interface and communication with service worker
- */
+document.addEventListener('DOMContentLoaded', () => {
+  const initButton = document.getElementById('initButton');
+  const testButton = document.getElementById('testButton');
+  const testResult = document.getElementById('testResult');
+  const statusDisplay = document.getElementById('statusDisplay');
 
-/**
- * DOM elements
- */
-const elements = {
-  statusDot: null,
-  statusText: null,
-  extensionStatus: null,
-  pageStatus: null,
-  reelCount: null,
-  toggleButton: null,
-  toggleText: null,
-  refreshButton: null
-};
+  // Initialize test button as disabled until extension is initialized
+  testButton.disabled = true;
 
-/**
- * Application state
- */
-const state = {
-  isEnabled: false,
-  isInstagramDM: false,
-  reelCount: 0,
-  isLoading: false
-};
+  // Check current extension status on popup open
+  checkExtensionStatus();
 
-/**
- * Initialize popup when DOM is loaded
- */
-document.addEventListener('DOMContentLoaded', async () => {
-  try {
-    console.log('[IG Reel Tracker] Popup initializing...');
-    
-    initializeElements();
-    setupEventListeners();
-    
-    // Set a timeout to prevent getting stuck
-    const initTimeout = setTimeout(() => {
-      console.warn('[IG Reel Tracker] Initialization timeout, forcing UI update');
-      updateUI();
-      updatePageStatus('Initialization timeout');
-      updateHeaderStatus('Timeout');
-    }, 5000); // 5 second timeout
-    
-    // Load extension state first
-    await loadExtensionState();
-    
-    // Check current page status
-    await checkCurrentPage();
-    
-    // Clear timeout since we completed successfully
-    clearTimeout(initTimeout);
-    
-    // Ensure UI is updated even if there were errors
-    updateUI();
-    
-    console.log('[IG Reel Tracker] Popup initialized successfully');
-  } catch (error) {
-    console.error('[IG Reel Tracker] Error initializing popup:', error);
-    showError('Failed to initialize popup');
-    
-    // Still try to update UI with whatever state we have
+  initButton.addEventListener('click', async () => {
+    initButton.disabled = true;
+    initButton.textContent = 'Initializing...';
+    statusDisplay.textContent = 'Status: Initializing...';
+    statusDisplay.className = 'status info';
+
     try {
-      updateUI();
-      updatePageStatus('Initialization failed');
-    } catch (uiError) {
-      console.error('[IG Reel Tracker] Error updating UI after initialization failure:', uiError);
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab) {
+        throw new Error('No active tab found.');
+      }
+
+      if (!tab.url.includes('instagram.com/direct/')) {
+        displayResult('ℹ️ Navigate to Instagram DMs first', 'info');
+        statusDisplay.textContent = 'Status: Please navigate to Instagram DMs';
+        statusDisplay.className = 'status error';
+        return;
+      }
+
+      // Send initialization message to content script
+      const response = await sendMessageWithTimeout(tab.id, { action: 'beginInitialization' }, 5000);
+
+      if (response && response.success) {
+        displayResult('✅ Extension initialized successfully!', 'success');
+        statusDisplay.textContent = 'Status: Initialized and Ready';
+        statusDisplay.className = 'status success';
+        testButton.disabled = false; // Enable test button
+        initButton.textContent = 'Initialized ✓';
+        initButton.style.background = '#6c757d';
+      } else {
+        throw new Error(response?.error || 'Initialization failed');
+      }
+    } catch (error) {
+      console.error(error);
+      displayResult('❌ Initialization failed: ' + error.message, 'error');
+      statusDisplay.textContent = 'Status: Initialization Failed';
+      statusDisplay.className = 'status error';
+      initButton.disabled = false;
+      initButton.textContent = 'Retry Initialization';
     }
+  });
+
+  testButton.addEventListener('click', async () => {
+    testButton.disabled = true;
+    testButton.textContent = 'Testing...';
+    testResult.style.display = 'none';
+
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+      if (!tab) {
+        throw new Error('No active tab found.');
+      }
+
+      if (!tab.url.includes('instagram.com/direct/')) {
+        displayResult('ℹ️ Navigate to Instagram DMs first', 'info');
+        return;
+      }
+
+      const response = await sendMessageWithTimeout(tab.id, { action: 'testInjection', timestamp: Date.now() }, 3000);
+
+      if (response && response.success) {
+        displayResult('✅ Injection successful!', 'success');
+      } else {
+        displayResult('❌ Injection failed', 'error');
+      }
+    } catch (error) {
+      console.error(error);
+      displayResult('❌ An error occurred during the test', 'error');
+    } finally {
+      testButton.disabled = false;
+      testButton.textContent = 'Test Instagram DM Injection';
+    }
+  });
+
+  async function checkExtensionStatus() {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      if (tab && tab.url.includes('instagram.com/direct/')) {
+        // Check if extension is already initialized
+        const response = await sendMessageWithTimeout(tab.id, { action: 'getStatus' }, 2000);
+        
+        if (response && response.success && response.isInitialized) {
+          statusDisplay.textContent = 'Status: Already Initialized';
+          statusDisplay.className = 'status success';
+          testButton.disabled = false;
+          initButton.textContent = 'Initialized ✓';
+          initButton.style.background = '#6c757d';
+        } else {
+          statusDisplay.textContent = 'Status: Ready to Initialize';
+          statusDisplay.className = 'status info';
+        }
+      } else {
+        statusDisplay.textContent = 'Status: Navigate to Instagram DMs';
+        statusDisplay.className = 'status info';
+      }
+    } catch (error) {
+      console.log('Status check failed (content script may not be loaded yet):', error);
+      statusDisplay.textContent = 'Status: Ready to Initialize';
+      statusDisplay.className = 'status info';
+    }
+  }
+
+  function displayResult(message, type) {
+    testResult.textContent = message;
+    testResult.className = type;
+    testResult.style.display = 'block';
+  }
+
+  function sendMessageWithTimeout(tabId, message, timeout) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('Message timeout')), timeout);
+
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        clearTimeout(timer);
+        resolve(response);
+      });
+    });
   }
 });
-
-/**
- * Initialize DOM element references
- */
-function initializeElements() {
-  elements.statusDot = document.getElementById('statusDot');
-  elements.statusText = document.getElementById('statusText');
-  elements.extensionStatus = document.getElementById('extensionStatus');
-  elements.pageStatus = document.getElementById('pageStatus');
-  elements.reelCount = document.getElementById('reelCount');
-  elements.toggleButton = document.getElementById('toggleButton');
-  elements.toggleText = document.getElementById('toggleText');
-  elements.refreshButton = document.getElementById('refreshButton');
-  
-  // Verify all elements are found
-  const missingElements = Object.entries(elements)
-    .filter(([key, element]) => !element)
-    .map(([key]) => key);
-    
-  if (missingElements.length > 0) {
-    throw new Error(`Missing DOM elements: ${missingElements.join(', ')}`);
-  }
-}
-
-/**
- * Set up event listeners for popup interactions
- */
-function setupEventListeners() {
-  elements.toggleButton.addEventListener('click', handleToggleClick);
-  elements.refreshButton.addEventListener('click', handleRefreshClick);
-}
-
-/**
- * Load extension state from service worker
- */
-async function loadExtensionState() {
-  try {
-    setLoadingState(true);
-    
-    const response = await chrome.runtime.sendMessage({ action: 'getStatus' });
-    
-    if (response && response.success) {
-      state.isEnabled = response.status.isEnabled;
-      state.reelCount = response.status.reelCount;
-      
-      updateUI();
-      console.log('[IG Reel Tracker] Extension state loaded:', response.status);
-    } else {
-      throw new Error(response ? response.error : 'No response from service worker');
-    }
-  } catch (error) {
-    console.error('[IG Reel Tracker] Error loading extension state:', error);
-    showError('Failed to connect to extension');
-  } finally {
-    setLoadingState(false);
-  }
-}
-
-/**
- * Check current page status
- */
-async function checkCurrentPage() {
-  try {
-    updateHeaderStatus('Checking page...');
-    
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    
-    if (!tab) {
-      throw new Error('No active tab found');
-    }
-    
-    console.log('[IG Reel Tracker] Current tab:', tab.url);
-    
-    const isInstagram = tab.url && tab.url.includes('instagram.com');
-    const isDMPage = tab.url && tab.url.includes('/direct/');
-    
-    state.isInstagramDM = isInstagram && isDMPage;
-    
-    // Update status immediately based on URL check
-    if (isInstagram && isDMPage) {
-      updatePageStatus('Instagram DMs');
-      updateHeaderStatus('Instagram DMs');
-    } else if (isInstagram) {
-      updatePageStatus('Instagram (not DMs)');
-      updateHeaderStatus('Instagram');
-    } else {
-      updatePageStatus('Not on Instagram');
-      updateHeaderStatus('Not Instagram');
-    }
-    
-    if (isInstagram && isDMPage) {
-      // Try to get page info from content script with timeout
-      try {
-        const response = await Promise.race([
-          chrome.tabs.sendMessage(tab.id, { action: 'getPageInfo' }),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Content script timeout')), 2000)
-          )
-        ]);
-        
-        if (response && response.success) {
-          console.log('[IG Reel Tracker] Content script response:', response.pageInfo);
-          // Update status with more detailed info if available
-          updatePageStatus('Instagram DMs (Active)');
-          updateHeaderStatus('Active');
-        }
-      } catch (contentScriptError) {
-        console.log('[IG Reel Tracker] Content script not ready or timed out:', contentScriptError.message);
-        
-        // Try to inject the content script if it's not available
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ['content-scripts/content.js']
-          });
-          console.log('[IG Reel Tracker] Content script injected successfully');
-          
-          // Wait a bit for the script to initialize, then try again
-          setTimeout(async () => {
-            try {
-              const retryResponse = await chrome.tabs.sendMessage(tab.id, { action: 'getPageInfo' });
-              if (retryResponse && retryResponse.success) {
-                console.log('[IG Reel Tracker] Content script retry successful:', retryResponse.pageInfo);
-                updatePageStatus('Instagram DMs (Active)');
-                updateHeaderStatus('Active');
-              }
-            } catch (retryError) {
-              console.log('[IG Reel Tracker] Content script retry failed:', retryError.message);
-            }
-          }, 1000);
-        } catch (injectionError) {
-          console.log('[IG Reel Tracker] Failed to inject content script:', injectionError.message);
-        }
-      }
-    }
-  } catch (error) {
-    console.error('[IG Reel Tracker] Error checking current page:', error);
-    updatePageStatus('Error checking page');
-    updateHeaderStatus('Error');
-  }
-}
-
-/**
- * Handle toggle button click
- */
-async function handleToggleClick() {
-  try {
-    if (state.isLoading) return;
-    
-    setLoadingState(true);
-    elements.toggleButton.disabled = true;
-    
-    const response = await chrome.runtime.sendMessage({ action: 'toggleEnabled' });
-    
-    if (response && response.success) {
-      state.isEnabled = response.isEnabled;
-      updateUI();
-      console.log('[IG Reel Tracker] Extension toggled:', state.isEnabled ? 'enabled' : 'disabled');
-    } else {
-      throw new Error(response ? response.error : 'No response from service worker');
-    }
-  } catch (error) {
-    console.error('[IG Reel Tracker] Error toggling extension:', error);
-    showError('Failed to toggle extension');
-  } finally {
-    setLoadingState(false);
-    elements.toggleButton.disabled = false;
-  }
-}
-
-/**
- * Handle refresh button click
- */
-async function handleRefreshClick() {
-  try {
-    if (state.isLoading) return;
-    
-    setLoadingState(true);
-    elements.refreshButton.disabled = true;
-    
-    await loadExtensionState();
-    await checkCurrentPage();
-    
-    console.log('[IG Reel Tracker] Popup refreshed');
-  } catch (error) {
-    console.error('[IG Reel Tracker] Error refreshing popup:', error);
-    showError('Failed to refresh');
-  } finally {
-    setLoadingState(false);
-    elements.refreshButton.disabled = false;
-  }
-}
-
-/**
- * Update UI based on current state
- */
-function updateUI() {
-  try {
-    // Update status indicator
-    elements.statusDot.className = 'status-dot';
-    if (state.isEnabled) {
-      elements.statusDot.classList.add('active');
-      updateHeaderStatus('Active');
-    } else {
-      updateHeaderStatus('Inactive');
-    }
-    
-    // Update extension status
-    elements.extensionStatus.textContent = state.isEnabled ? 'Extension Ready' : 'Disabled';
-    
-    // Update toggle button
-    elements.toggleText.textContent = state.isEnabled ? 'Disable Tracking' : 'Enable Tracking';
-    
-    // Update reel count
-    elements.reelCount.textContent = state.reelCount.toString();
-    
-    console.log('[IG Reel Tracker] UI updated:', state);
-  } catch (error) {
-    console.error('[IG Reel Tracker] Error updating UI:', error);
-  }
-}
-
-/**
- * Update header status text
- * @param {string} status - Status text to display
- */
-function updateHeaderStatus(status) {
-  try {
-    if (elements.statusText) {
-      elements.statusText.textContent = status;
-    }
-  } catch (error) {
-    console.error('[IG Reel Tracker] Error updating header status:', error);
-  }
-}
-
-/**
- * Update page status display
- * @param {string} customStatus - Custom status message
- */
-function updatePageStatus(customStatus = null) {
-  try {
-    if (!elements.pageStatus) {
-      console.warn('[IG Reel Tracker] Page status element not found');
-      return;
-    }
-    
-    if (customStatus) {
-      elements.pageStatus.textContent = customStatus;
-      return;
-    }
-    
-    if (state.isInstagramDM) {
-      elements.pageStatus.textContent = 'Instagram DMs';
-      elements.pageStatus.style.color = 'var(--ig-success)';
-    } else {
-      elements.pageStatus.textContent = 'Not on Instagram DMs';
-      elements.pageStatus.style.color = 'var(--ig-text-secondary)';
-    }
-  } catch (error) {
-    console.error('[IG Reel Tracker] Error updating page status:', error);
-  }
-}
-
-/**
- * Set loading state for UI elements
- * @param {boolean} loading - Whether app is in loading state
- */
-function setLoadingState(loading) {
-  state.isLoading = loading;
-  
-  if (loading) {
-    elements.statusText.classList.add('loading');
-  } else {
-    elements.statusText.classList.remove('loading');
-  }
-}
-
-/**
- * Show error message to user
- * @param {string} message - Error message to display
- */
-function showError(message) {
-  elements.statusDot.className = 'status-dot error';
-  elements.statusText.textContent = 'Error';
-  elements.extensionStatus.textContent = message;
-  elements.extensionStatus.style.color = 'var(--ig-error)';
-  
-  console.error('[IG Reel Tracker] Error displayed to user:', message);
-}
-
-console.log('[IG Reel Tracker] Popup script loaded successfully');
